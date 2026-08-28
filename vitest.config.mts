@@ -9,6 +9,7 @@ export default defineConfig({
   },
   test: {
     environment: "node",
+    setupFiles: ["./vitest.setup.ts"],
     // Dummy values so src/lib/env.ts's Zod validation passes when a module
     // under test transitively imports src/db/index.ts (e.g. for its type,
     // or as the default `db` param) — no real DB/auth is ever hit in tests
