@@ -1,0 +1,82 @@
+/* Mobile-first intake form: single column, large touch targets. No design
+   system per AGENTS.md's "no premature abstraction" principle — plain CSS
+   scoped to this form via CSS Modules. Widens slightly on larger viewports
+   but never goes multi-column; Technicians primarily use this on phones. */
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  max-width: 32rem;
+  margin: 0 auto;
+  padding: 1rem;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.field label {
+  font-weight: 600;
+}
+
+.field input[type="text"],
+.field input[type="number"],
+.field input[type="date"],
+.field select,
+.field textarea {
+  font-size: 1rem;
+  padding: 0.75rem;
+  min-height: 3rem;
+  border: 1px solid #999;
+  border-radius: 0.375rem;
+}
+
+.field textarea {
+  min-height: 6rem;
+  resize: vertical;
+}
+
+.checkboxField {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.checkboxField input[type="checkbox"] {
+  width: 1.5rem;
+  height: 1.5rem;
+}
+
+.checkboxGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.submit {
+  font-size: 1.125rem;
+  padding: 1rem;
+  min-height: 3.25rem;
+  border: none;
+  border-radius: 0.375rem;
+  background: #1a5c2b;
+  color: #fff;
+  font-weight: 600;
+}
+
+.submit:disabled {
+  opacity: 0.6;
+}
+
+.error {
+  color: #b00020;
+  font-weight: 600;
+}
+
+.success {
+  color: #1a5c2b;
+  font-weight: 600;
+}
