@@ -25,6 +25,9 @@ export const users = pgTable("users", {
   id: uuid("id").primaryKey().defaultRandom(),
   email: text("email").notNull().unique(),
   role: text("role", { enum: roleEnum }).notNull(),
+  // bcrypt hash of the user's password — set when the account is created via
+  // invitation accept (see src/db/queries/invitations.ts). Never store plaintext.
+  passwordHash: text("password_hash").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

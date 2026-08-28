@@ -1,8 +1,8 @@
+import bcrypt from "bcryptjs";
 import Credentials from "next-auth/providers/credentials";
 import type { NextAuthConfig } from "next-auth";
+import { getUserByEmail } from "@/db/queries/users";
 
-// Credential verification against the users table lands in ticket #4
-// (account provisioning via email invite) — this is the base plumbing only.
 export const authConfig = {
   session: { strategy: "jwt" },
   providers: [
@@ -11,8 +11,25 @@ export const authConfig = {
         email: { label: "Email", type: "email" },
         password: { label: "Password", type: "password" },
       },
-      authorize: async () => {
-        throw new Error("Credential verification not implemented yet — see issue #4");
+      authorize: async (credentials) => {
+        const email = credentials?.email;
+        const password = credentials?.password;
+
+        if (typeof email !== "string" || typeof password !== "string") {
+          return null;
+        }
+
+        const user = await getUserByEmail(email);
+        if (!user) {
+          return null;
+        }
+
+        const passwordMatches = await bcrypt.compare(password, user.passwordHash);
+        if (!passwordMatches) {
+          return null;
+        }
+
+        return { id: user.id, email: user.email, role: user.role };
       },
     }),
   ],
