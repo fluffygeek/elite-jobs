@@ -156,6 +156,12 @@ export default async function JobsPage({
         <p role={error ? "alert" : "status"}>{notice}</p>
       )}
 
+      <p>
+        <a href="/api/export?scope=all">Export all</a>
+        {" | "}
+        <a href="/api/export?scope=flagged">Export flagged</a>
+      </p>
+
       <table>
         <thead>
           <tr>
