@@ -37,12 +37,19 @@ export const authConfig = {
     jwt({ token, user }) {
       if (user) {
         token.role = user.role;
+        // JWT strategy: `token.sub` already carries the user id (set by
+        // Auth.js from the `authorize()` return value's `id`), but we mirror
+        // it onto `token.id` explicitly since that's what the session
+        // callback below reads — relying on `sub` implicitly would be an
+        // easy thing to break by accident later.
+        token.id = user.id;
       }
       return token;
     },
     session({ session, token }) {
       if (session.user) {
         session.user.role = token.role as "technician" | "office_staff";
+        session.user.id = token.id as string;
       }
       return session;
     },
