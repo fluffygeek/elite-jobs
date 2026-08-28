@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { SerwistProvider } from "@serwist/turbopack/react";
+import { AppBar } from "@/components/app-bar";
 
 // Registers the service worker (served from /serwist/sw.js — see
 // src/app/serwist/[path]/route.ts) for the Technician intake surface only.
@@ -7,5 +8,10 @@ import { SerwistProvider } from "@serwist/turbopack/react";
 // work: once registered, the browser's own "Add to Home Screen" affordance
 // picks it up alongside the manifest (src/app/manifest.ts).
 export default function IntakeLayout({ children }: { children: ReactNode }) {
-  return <SerwistProvider swUrl="/serwist/sw.js">{children}</SerwistProvider>;
+  return (
+    <SerwistProvider swUrl="/serwist/sw.js">
+      <AppBar />
+      {children}
+    </SerwistProvider>
+  );
 }

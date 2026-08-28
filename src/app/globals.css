@@ -1,12 +1,31 @@
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --ink: #16232f;
+  --ink-soft: #4c5f70;
+  --paper: #f4f7f9;
+  --paper-raised: #ffffff;
+  --line: #d7e0e7;
+  --orange: #e0631f;
+  --orange-dim: #c2560f;
+  --teal: #1f7a8c;
+  --error: #c0392b;
+  --error-soft: #fbe9e7;
+  --focus-ring: #0b6fa8;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --ink: #ecf1f5;
+    --ink-soft: #a9b8c6;
+    --paper: #101a23;
+    --paper-raised: #172531;
+    --line: #2a3d4d;
+    --orange: #f0894c;
+    --orange-dim: #f0894c;
+    --teal: #5fc2d1;
+    --error: #e07a6d;
+    --error-soft: #3a221f;
+    --focus-ring: #6cc4f2;
+    color-scheme: dark;
   }
 }
 
@@ -24,9 +43,9 @@ body {
   min-height: 100%;
   display: flex;
   flex-direction: column;
-  color: var(--foreground);
-  background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
+  color: var(--ink);
+  background: var(--paper);
+  font-family: var(--font-body), system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -42,8 +61,7 @@ a {
   text-decoration: none;
 }
 
-@media (prefers-color-scheme: dark) {
-  html {
-    color-scheme: dark;
-  }
+:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
 }
