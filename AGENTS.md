@@ -50,6 +50,8 @@ src/
 - `npm run db:generate` — generate a Drizzle migration from `src/db/schema.ts`
 - `npm run db:migrate` — apply pending migrations to `DATABASE_URL`
 
+On a fresh checkout, `npm run typecheck` fails with `Cannot find name 'LayoutProps'` until `.next/types` exists — run `npm run build` (or `npx next typegen`) once first. Not a bug; Next.js 16 generates that global type via build/dev, not statically.
+
 ## Agent skills
 
 ### Issue tracker
