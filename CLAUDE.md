@@ -45,6 +45,16 @@ auth/                     Auth.js config, role/permission checks
 
 Not yet established — no `package.json` exists yet. Once the project is scaffolded, record the real `dev` / `build` / `lint` / `typecheck` / `test` commands here so the agent can verify its own work without asking each time.
 
+## Agent skills
+
+### Issue tracker
+
+Issues live in GitHub Issues for `fluffygeek/elite-jobs` (uses the `gh` CLI). See `docs/agents/issue-tracker.md`.
+
+### Domain docs
+
+Single-context: root `CONTEXT.md` + `docs/adr/`. See `docs/agents/domain.md`.
+
 ## On-demand context
 
 - [CONTEXT.md](./CONTEXT.md) — domain glossary (Job, Market, Bore Payment Tier, Discrepancy Flag, etc.)
