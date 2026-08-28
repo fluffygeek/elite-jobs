@@ -105,6 +105,68 @@ export async function createJob(input: CreateJobInput, db: Db = defaultDb) {
   }
 }
 
+// Thrown by syncJob when a retried sync reuses a client-generated id that
+// already exists on the server but with *different* submitted data — a
+// genuinely unexpected state (the same offline-queued Job should always
+// resubmit identical data), distinct from DuplicateJobNumberError which
+// covers two different Jobs colliding on (market_id, job_number).
+export class ConflictingSyncError extends Error {
+  constructor(id: string) {
+    super(`Job ${id} already exists with different data than this sync submitted.`);
+    this.name = "ConflictingSyncError";
+  }
+}
+
+function submittedDataMatches(
+  existing: typeof jobs.$inferSelect,
+  input: CreateJobInput,
+): boolean {
+  return (
+    existing.marketId === input.marketId &&
+    existing.technicianId === input.technicianId &&
+    existing.jobNumber === input.jobNumber &&
+    existing.date.getTime() === input.date.getTime() &&
+    existing.address === input.address &&
+    existing.fiberCode === input.fiberCode &&
+    existing.fiberFootage === input.fiberFootage &&
+    existing.boreFootage === input.boreFootage &&
+    existing.locate === input.locate &&
+    existing.directionalBore === input.directionalBore &&
+    existing.prebury === input.prebury &&
+    (existing.techNotes ?? "") === (input.techNotes ?? "")
+  );
+}
+
+/**
+ * Idempotent upsert for the offline-sync path (api/sync). A retried sync of
+ * the same client-generated id is recognized by looking the id up first,
+ * rather than by attempting an insert and reacting to a conflict:
+ *
+ * - id doesn't exist yet → insert it via createJob (still subject to the
+ *   normal (market_id, job_number) duplicate check for a *different* Job).
+ * - id exists with identical submitted data → no-op success (this is the
+ *   retried-sync case the offline queue is built around: same client,
+ *   dropped connection, retry).
+ * - id exists with different submitted data → ConflictingSyncError, a real
+ *   problem rather than a silently-accepted retry.
+ */
+export async function syncJob(
+  input: CreateJobInput,
+  db: Db = defaultDb,
+): Promise<{ job: typeof jobs.$inferSelect; created: boolean }> {
+  const [existing] = await db.select().from(jobs).where(eq(jobs.id, input.id));
+
+  if (existing) {
+    if (submittedDataMatches(existing, input)) {
+      return { job: existing, created: false };
+    }
+    throw new ConflictingSyncError(input.id);
+  }
+
+  const job = await createJob(input, db);
+  return { job, created: true };
+}
+
 // Office Staff dashboard reads Jobs across every Market in one list (issue
 // #7's core view). Joins in Market name and Technician email for display —
 // there's nowhere else the dashboard can get either without a second

@@ -1,37 +1,12 @@
 "use server";
 
-import { z } from "zod";
 import { auth } from "../../../../auth";
 import { createJob, DuplicateJobNumberError } from "@/db/queries/jobs";
-import { fiberCodeEnum } from "@/db/schema";
 import { UnparsableAddressError } from "@/lib/domain/job-site";
 import { NotAuthorizedError } from "./errors";
+import { submitJobSchema, type SubmitJobInput } from "./schema";
 
-// The Job's UUID is client-generated (crypto.randomUUID() in the browser
-// form) rather than server-assigned. This deliberately follows the same
-// identity model ADR 0001 establishes for offline submission — jobs.id is
-// documented in src/db/schema.ts as "the client-generated UUID from offline
-// submission ... never a server-assigned one" — even though this ticket
-// (#5) is the online-only path with no offline queue yet. Ticket #6 (offline
-// sync) will upsert on this same client-generated id, so generating it
-// client-side now means #6 doesn't have to change how the id is produced,
-// only add local persistence + retry around the same submit call.
-const submitJobSchema = z.object({
-  id: z.string().uuid(),
-  marketId: z.string().uuid(),
-  jobNumber: z.string().trim().min(1, "Job Number is required"),
-  date: z.coerce.date(),
-  address: z.string().trim().min(1, "Address is required"),
-  fiberCode: z.enum(fiberCodeEnum),
-  fiberFootage: z.coerce.number().int().min(0),
-  boreFootage: z.coerce.number().int().min(0),
-  locate: z.coerce.boolean(),
-  directionalBore: z.coerce.boolean(),
-  prebury: z.coerce.boolean(),
-  techNotes: z.string().trim().optional(),
-});
-
-export type SubmitJobInput = z.input<typeof submitJobSchema>;
+export type { SubmitJobInput };
 
 export type SubmitJobResult =
   | { ok: true; job: { id: string; jobNumber: string } }

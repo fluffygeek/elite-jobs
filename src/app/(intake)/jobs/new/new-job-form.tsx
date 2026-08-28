@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import type { FiberCode } from "@/db/schema";
-import { submitJob } from "../actions";
+import { offlineDb } from "@/lib/offline/db";
+import { initSyncTriggers, syncQueuedJobs } from "@/lib/offline/sync";
 import styles from "./new-job-form.module.css";
 
 interface Market {
@@ -17,46 +18,64 @@ interface NewJobFormProps {
 
 const today = () => new Date().toISOString().slice(0, 10);
 
+// Issue #6: the form no longer calls the submitJob Server Action directly
+// (that's the ticket #5 online-only path — service workers/background sync
+// can't invoke Server Actions, and calling it directly here would mean a Job
+// created with no connectivity is simply lost). Instead every submission is
+// written to the local Dexie queue immediately — this succeeds with zero
+// network — and then an immediate sync attempt is made in case we're
+// online. The queue itself (src/lib/offline/sync.ts) is also synced on load,
+// on reconnect, and periodically while the tab is foregrounded, so a Job
+// queued while offline sends itself once connectivity returns without the
+// Technician doing anything else.
 export function NewJobForm({ markets, fiberCodes }: NewJobFormProps) {
-  const [status, setStatus] = useState<"idle" | "submitting" | "success" | "error">("idle");
+  const [status, setStatus] = useState<
+    "idle" | "saving" | "saved-offline" | "synced" | "error"
+  >("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [lastJobNumber, setLastJobNumber] = useState<string | null>(null);
 
+  useEffect(() => {
+    initSyncTriggers();
+  }, []);
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setStatus("submitting");
+    setStatus("saving");
     setErrorMessage(null);
 
     const form = event.currentTarget;
     const formData = new FormData(form);
+    const jobNumber = String(formData.get("jobNumber") ?? "");
 
     try {
-      const result = await submitJob({
-        // Client-generated Job id (ADR 0001's identity model) — see
-        // src/app/(intake)/jobs/actions.ts for why this is generated here
-        // rather than by the server.
-        id: crypto.randomUUID(),
+      const id = crypto.randomUUID();
+      await offlineDb.queuedJobs.add({
+        id,
         marketId: String(formData.get("marketId") ?? ""),
-        jobNumber: String(formData.get("jobNumber") ?? ""),
+        jobNumber,
         date: String(formData.get("date") ?? ""),
         address: String(formData.get("address") ?? ""),
         fiberCode: String(formData.get("fiberCode") ?? "") as FiberCode,
-        fiberFootage: String(formData.get("fiberFootage") ?? ""),
-        boreFootage: String(formData.get("boreFootage") ?? ""),
+        fiberFootage: Number(formData.get("fiberFootage") ?? 0),
+        boreFootage: Number(formData.get("boreFootage") ?? 0),
         locate: formData.get("locate") === "on",
         directionalBore: formData.get("directionalBore") === "on",
         prebury: formData.get("prebury") === "on",
         techNotes: String(formData.get("techNotes") ?? ""),
+        status: "queued",
+        queuedAt: new Date().toISOString(),
       });
 
-      if (result.ok) {
-        setStatus("success");
-        setLastJobNumber(result.job.jobNumber);
-        form.reset();
-      } else {
-        setStatus("error");
-        setErrorMessage(result.message);
-      }
+      form.reset();
+      setLastJobNumber(jobNumber);
+
+      // Attempt an immediate sync (covers the common online case); if it's
+      // offline this simply fails silently inside syncQueuedJobs and the
+      // Job stays queued for the trigger points in initSyncTriggers.
+      await syncQueuedJobs();
+      const stored = await offlineDb.queuedJobs.get(id);
+      setStatus(stored?.status === "synced" ? "synced" : "saved-offline");
     } catch (error) {
       setStatus("error");
       setErrorMessage(error instanceof Error ? error.message : "Something went wrong.");
@@ -65,9 +84,14 @@ export function NewJobForm({ markets, fiberCodes }: NewJobFormProps) {
 
   return (
     <form className={styles.form} onSubmit={handleSubmit}>
-      {status === "success" ? (
+      {status === "synced" ? (
         <p className={styles.success} role="status">
           Job {lastJobNumber} submitted.
+        </p>
+      ) : null}
+      {status === "saved-offline" ? (
+        <p className={styles.success} role="status">
+          Job {lastJobNumber} saved on this device — will send automatically once connected.
         </p>
       ) : null}
       {status === "error" && errorMessage ? (
@@ -155,8 +179,8 @@ export function NewJobForm({ markets, fiberCodes }: NewJobFormProps) {
         <textarea id="techNotes" name="techNotes" />
       </div>
 
-      <button className={styles.submit} type="submit" disabled={status === "submitting"}>
-        {status === "submitting" ? "Submitting…" : "Submit Job"}
+      <button className={styles.submit} type="submit" disabled={status === "saving"}>
+        {status === "saving" ? "Saving…" : "Submit Job"}
       </button>
     </form>
   );

@@ -13,13 +13,16 @@
     "db:migrate": "drizzle-kit migrate"
   },
   "dependencies": {
+    "@serwist/turbopack": "^9.5.12",
     "bcryptjs": "^3.0.3",
+    "dexie": "^4.4.5",
     "drizzle-orm": "^0.45.2",
     "next": "16.3.3",
     "next-auth": "^5.0.0-beta.32",
     "postgres": "^3.4.9",
     "react": "19.2.8",
     "react-dom": "19.2.8",
+    "serwist": "^9.5.12",
     "zod": "^4.4.3"
   },
   "devDependencies": {
@@ -33,11 +36,13 @@
     "drizzle-kit": "^0.31.10",
     "eslint": "^9",
     "eslint-config-next": "16.3.3",
+    "fake-indexeddb": "^6.2.5",
     "typescript": "^5",
     "vitest": "^4.1.11"
   },
   "allowScripts": {
     "esbuild": true,
-    "unrs-resolver": true
+    "unrs-resolver": true,
+    "@swc/core@1.15.46": true
   }
 }
