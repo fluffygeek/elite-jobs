@@ -394,3 +394,46 @@ export async function updateJobTechNotes(
     db,
   );
 }
+
+/**
+ * Updates a Job's Discrepancy Flag via compare-and-swap. A toggle, not a
+ * one-directional action — per CONTEXT.md's "Discrepancy Flag" entry, Office
+ * Staff can both set it and clear it once resolved.
+ */
+export async function updateJobDiscrepancyFlag(
+  id: string,
+  expectedOldDiscrepancyFlag: boolean,
+  newDiscrepancyFlag: boolean,
+  db: Db = defaultDb,
+): Promise<Job> {
+  return casUpdateJobField(
+    id,
+    "Discrepancy Flag",
+    jobs.discrepancyFlag,
+    expectedOldDiscrepancyFlag,
+    { discrepancyFlag: newDiscrepancyFlag, updatedAt: new Date() },
+    db,
+  );
+}
+
+/**
+ * Updates a Job's Close-Out status via compare-and-swap. CONTEXT.md's
+ * "Close-Out" entry doesn't forbid reverting a Job to awaiting Close-Out, so
+ * this is a toggle like every other field-group here, for consistency with
+ * Discrepancy Flag rather than an invented one-way restriction.
+ */
+export async function updateJobClosedOut(
+  id: string,
+  expectedOldClosedOut: boolean,
+  newClosedOut: boolean,
+  db: Db = defaultDb,
+): Promise<Job> {
+  return casUpdateJobField(
+    id,
+    "Close-Out",
+    jobs.closedOut,
+    expectedOldClosedOut,
+    { closedOut: newClosedOut, updatedAt: new Date() },
+    db,
+  );
+}

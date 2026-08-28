@@ -10,7 +10,9 @@ import {
   listJobs,
   updateJobAddress,
   updateJobBoreFootage,
+  updateJobClosedOut,
   updateJobDirectionalBore,
+  updateJobDiscrepancyFlag,
   updateJobFiberFootage,
   updateJobTechNotes,
 } from "@/db/queries/jobs";
@@ -190,6 +192,46 @@ describe("createJob persistence", () => {
       await expect(
         updateJobDirectionalBore(randomUUID(), true, false, db),
       ).rejects.toBeInstanceOf(JobNotFoundError);
+    });
+
+    it("sets and clears the Discrepancy Flag via compare-and-swap", async () => {
+      const job = await createJob(baseInput(), db);
+      expect(job.discrepancyFlag).toBe(false);
+
+      const flagged = await updateJobDiscrepancyFlag(job.id, false, true, db);
+      expect(flagged.discrepancyFlag).toBe(true);
+
+      const cleared = await updateJobDiscrepancyFlag(job.id, true, false, db);
+      expect(cleared.discrepancyFlag).toBe(false);
+    });
+
+    it("rejects a concurrent Discrepancy Flag edit when the expected old value is stale", async () => {
+      const job = await createJob(baseInput(), db);
+      await updateJobDiscrepancyFlag(job.id, false, true, db);
+
+      await expect(
+        updateJobDiscrepancyFlag(job.id, false, true, db),
+      ).rejects.toBeInstanceOf(FieldConflictError);
+    });
+
+    it("sets and clears Close-Out via compare-and-swap", async () => {
+      const job = await createJob(baseInput(), db);
+      expect(job.closedOut).toBe(false);
+
+      const closedOut = await updateJobClosedOut(job.id, false, true, db);
+      expect(closedOut.closedOut).toBe(true);
+
+      const reopened = await updateJobClosedOut(job.id, true, false, db);
+      expect(reopened.closedOut).toBe(false);
+    });
+
+    it("rejects a concurrent Close-Out edit when the expected old value is stale", async () => {
+      const job = await createJob(baseInput(), db);
+      await updateJobClosedOut(job.id, false, true, db);
+
+      await expect(updateJobClosedOut(job.id, false, true, db)).rejects.toBeInstanceOf(
+        FieldConflictError,
+      );
     });
   });
 });

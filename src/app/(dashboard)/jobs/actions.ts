@@ -7,7 +7,9 @@ import {
   JobNotFoundError,
   updateJobAddress,
   updateJobBoreFootage,
+  updateJobClosedOut,
   updateJobDirectionalBore,
+  updateJobDiscrepancyFlag,
   updateJobFiberCode,
   updateJobFiberFootage,
   updateJobLocate,
@@ -28,10 +30,11 @@ async function requireOfficeStaff() {
 }
 
 // Fields Office Staff may correct after the fact — deliberately excludes Job
-// Number, Market, and Technician (not correctable per the domain model), and
-// Close-Out/Discrepancy Flag (ticket #8's scope, not this one). Kept as a
-// literal union rather than an arbitrary client-sent string, so the field
-// name itself is checked at compile time everywhere this type is used.
+// Number, Market, and Technician (not correctable per the domain model).
+// Close-Out and Discrepancy Flag (ticket #8) are included: both are toggled
+// exclusively by Office Staff, never by Technicians. Kept as a literal union
+// rather than an arbitrary client-sent string, so the field name itself is
+// checked at compile time everywhere this type is used.
 export type EditableJobField =
   | "address"
   | "fiberCode"
@@ -40,7 +43,9 @@ export type EditableJobField =
   | "locate"
   | "directionalBore"
   | "prebury"
-  | "techNotes";
+  | "techNotes"
+  | "discrepancyFlag"
+  | "closedOut";
 
 interface FieldValueMap {
   address: string;
@@ -51,6 +56,8 @@ interface FieldValueMap {
   directionalBore: boolean;
   prebury: boolean;
   techNotes: string;
+  discrepancyFlag: boolean;
+  closedOut: boolean;
 }
 
 export type UpdateJobFieldResult =
@@ -115,6 +122,12 @@ export async function updateJobFieldAction<F extends EditableJobField>(
         break;
       case "techNotes":
         job = await updateJobTechNotes(id, expectedOldValue as string, newValue as string);
+        break;
+      case "discrepancyFlag":
+        job = await updateJobDiscrepancyFlag(id, expectedOldValue as boolean, newValue as boolean);
+        break;
+      case "closedOut":
+        job = await updateJobClosedOut(id, expectedOldValue as boolean, newValue as boolean);
         break;
       default: {
         // Exhaustiveness check: TypeScript errors here if EditableJobField
