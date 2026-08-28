@@ -1,0 +1,3 @@
+# Offline-first Job submission with client-generated IDs
+
+Technicians submit Jobs from the field where connectivity is often weak or absent. We considered requiring a live connection at submit time (simpler client, no sync/conflict logic) but rejected it because a lost submission in the field is a lost Job. Instead, the client persists a Job locally the moment it's created, assigns it a client-generated ID, and syncs it to the server in the background whenever connectivity is available. The server treats that client-generated ID as the Job's identity, so a retried sync after a dropped connection is recognized as the same Job rather than creating a duplicate.
