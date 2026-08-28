@@ -1,0 +1,510 @@
+<title>Elite Jobs Deployment Guide</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+  :root {
+    --paper: #f4f7f9;
+    --paper-raised: #ffffff;
+    --ink: #1c2b3a;
+    --ink-soft: #48586b;
+    --line: #d7e0e7;
+    --teal: #1f7a8c;
+    --teal-soft: #dcf0f2;
+    --orange: #e0631f;
+    --orange-soft: #fbe6d9;
+    --good: #2f7a4f;
+    --good-soft: #e2f2e7;
+    --warn: #a35b00;
+    --warn-soft: #fbedd6;
+    --code-bg: #10202a;
+    --code-fg: #cfe8ee;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #121c26;
+      --paper-raised: #182631;
+      --ink: #eaf0f4;
+      --ink-soft: #a7b7c5;
+      --line: #2a3d4d;
+      --teal: #5fc2d1;
+      --teal-soft: #1a3338;
+      --orange: #f0894c;
+      --orange-soft: #3a2a1e;
+      --good: #6fce93;
+      --good-soft: #1b3122;
+      --warn: #e0ac4a;
+      --warn-soft: #3a2e14;
+      --code-bg: #0b141b;
+      --code-fg: #bfe2ea;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --paper: #121c26;
+    --paper-raised: #182631;
+    --ink: #eaf0f4;
+    --ink-soft: #a7b7c5;
+    --line: #2a3d4d;
+    --teal: #5fc2d1;
+    --teal-soft: #1a3338;
+    --orange: #f0894c;
+    --orange-soft: #3a2a1e;
+    --good: #6fce93;
+    --good-soft: #1b3122;
+    --warn: #e0ac4a;
+    --warn-soft: #3a2e14;
+    --code-bg: #0b141b;
+    --code-fg: #bfe2ea;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: 'Public Sans', system-ui, sans-serif;
+    font-size: 17px;
+    line-height: 1.65;
+    margin: 0;
+    padding: 0 20px 90px;
+  }
+
+  .wrap { max-width: 800px; margin: 0 auto; }
+
+  header.top {
+    padding: 56px 0 32px;
+    border-bottom: 3px solid var(--teal);
+  }
+
+  .eyebrow {
+    font-weight: 700;
+    font-size: 13px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--teal);
+    margin: 0 0 10px;
+  }
+
+  h1 {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-weight: 800;
+    font-size: clamp(2.2rem, 5.5vw, 3.2rem);
+    line-height: 1.05;
+    text-transform: uppercase;
+    letter-spacing: 0.01em;
+    margin: 0 0 14px;
+    text-wrap: balance;
+  }
+
+  .lede { font-size: 19px; color: var(--ink-soft); max-width: 60ch; margin: 0; }
+
+  .who-for {
+    display: inline-flex;
+    gap: 10px;
+    margin-top: 20px;
+    flex-wrap: wrap;
+  }
+
+  .badge {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    background: var(--teal-soft);
+    color: var(--teal);
+    padding: 5px 10px;
+    border-radius: 4px;
+  }
+
+  h2 {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-weight: 700;
+    font-size: 1.9rem;
+    text-transform: uppercase;
+    letter-spacing: 0.01em;
+    margin: 60px 0 4px;
+    text-wrap: balance;
+  }
+
+  .section-num {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-weight: 800;
+    color: var(--teal);
+    font-size: 1.05rem;
+    letter-spacing: 0.08em;
+  }
+
+  h3 {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-weight: 700;
+    font-size: 1.3rem;
+    text-transform: uppercase;
+    margin: 28px 0 8px;
+  }
+
+  p { margin: 0 0 15px; max-width: 66ch; }
+  ul, ol { margin: 0 0 15px; padding-left: 1.3em; max-width: 66ch; }
+  li { margin-bottom: 6px; }
+
+  .step {
+    background: var(--paper-raised);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 22px 24px;
+    margin: 18px 0;
+    display: grid;
+    grid-template-columns: 44px 1fr;
+    gap: 18px;
+  }
+
+  .step .num {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: var(--teal-soft);
+    color: var(--teal);
+    font-family: 'Barlow Condensed', sans-serif;
+    font-weight: 800;
+    font-size: 1.3rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .step h4 {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 1.25rem;
+    text-transform: uppercase;
+    letter-spacing: 0.01em;
+    margin: 0 0 8px;
+  }
+
+  .step p:last-child { margin-bottom: 0; }
+
+  .where {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    background: var(--orange-soft);
+    border-left: 4px solid var(--orange);
+    border-radius: 6px;
+    padding: 12px 16px;
+    margin: 12px 0 0;
+    font-size: 15px;
+  }
+
+  .where .glyph {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-weight: 800;
+    color: var(--orange);
+    flex-shrink: 0;
+  }
+
+  .where p { margin: 0; }
+
+  code, .field {
+    font-family: 'IBM Plex Mono', ui-monospace, monospace;
+    font-size: 0.88em;
+  }
+
+  code {
+    background: var(--teal-soft);
+    color: var(--teal);
+    padding: 2px 6px;
+    border-radius: 4px;
+  }
+
+  pre.codeblock {
+    background: var(--code-bg);
+    color: var(--code-fg);
+    padding: 16px 18px;
+    border-radius: 8px;
+    overflow-x: auto;
+    font-family: 'IBM Plex Mono', ui-monospace, monospace;
+    font-size: 14px;
+    line-height: 1.6;
+    margin: 14px 0;
+  }
+
+  .note, .warn {
+    border-radius: 6px;
+    padding: 14px 18px;
+    margin: 20px 0;
+    font-size: 15px;
+  }
+
+  .note {
+    background: var(--good-soft);
+    border-left: 4px solid var(--good);
+  }
+  .note .label { color: var(--good); }
+
+  .warn {
+    background: var(--warn-soft);
+    border-left: 4px solid var(--warn);
+  }
+  .warn .label { color: var(--warn); }
+
+  .note .label, .warn .label {
+    font-weight: 700;
+    text-transform: uppercase;
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    display: block;
+    margin-bottom: 4px;
+  }
+  .note p, .warn p { margin: 0; }
+
+  .diagram {
+    background: var(--paper-raised);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 20px;
+    margin: 24px 0;
+    overflow-x: auto;
+  }
+  pre.mermaid { margin: 0; }
+
+  .checklist {
+    list-style: none;
+    padding: 0;
+    margin: 16px 0;
+  }
+  .checklist li {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    margin-bottom: 10px;
+  }
+  .checklist .box {
+    width: 18px;
+    height: 18px;
+    border: 2px solid var(--teal);
+    border-radius: 4px;
+    flex-shrink: 0;
+    margin-top: 3px;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 16px 0;
+    font-size: 15px;
+  }
+  th, td {
+    text-align: left;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--line);
+  }
+  th {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    font-size: 13px;
+    color: var(--ink-soft);
+  }
+  td code { white-space: nowrap; }
+
+  footer {
+    margin-top: 72px;
+    padding-top: 24px;
+    border-top: 1px solid var(--line);
+    color: var(--ink-soft);
+    font-size: 14px;
+  }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <p class="eyebrow">Elite Jobs — Setup Guide</p>
+    <h1>Deploying Elite Jobs</h1>
+    <p class="lede">Everything needed to take Elite Jobs from code on GitHub to a real, working website — with a real database behind it.</p>
+    <div class="who-for">
+      <span class="badge">For: the site owner</span>
+      <span class="badge">Time: ~20 minutes</span>
+      <span class="badge">Cost: free tier to start</span>
+    </div>
+  </header>
+
+  <section>
+    <p class="section-num">Overview</p>
+    <h2>How The Pieces Fit Together</h2>
+    <p>Three services work together. You already have the first one — the code lives on <strong>GitHub</strong>. This guide connects it to <strong>Vercel</strong>, which builds and hosts the website, and gives Vercel a <strong>Postgres database</strong> to store every job.</p>
+
+    <div class="diagram">
+      <pre class="mermaid">
+flowchart LR
+    GH["GitHub\nfluffygeek/elite-jobs"] -->|"every push to master"| V["Vercel\nbuilds & hosts the site"]
+    V -->|"reads and writes jobs"| DB[("Postgres Database")]
+    U(["Techs & Office Staff"]) -->|"visit the website"| V
+      </pre>
+    </div>
+
+    <div class="note">
+      <span class="label">Already done</span>
+      <p>The code is already on GitHub at <code>fluffygeek/elite-jobs</code>, and it's already been tested locally — this guide is only about putting it online.</p>
+    </div>
+  </section>
+
+  <section>
+    <p class="section-num">Before You Start</p>
+    <h2>What You'll Need</h2>
+    <ul class="checklist">
+      <li><span class="box"></span> A Vercel account (free to create at <code>vercel.com</code>, and it can sign in directly with your GitHub account)</li>
+      <li><span class="box"></span> Access to the GitHub repository <code>fluffygeek/elite-jobs</code></li>
+      <li><span class="box"></span> About 20 minutes, uninterrupted</li>
+    </ul>
+  </section>
+
+  <section>
+    <p class="section-num">Part 1</p>
+    <h2>Connect GitHub To Vercel</h2>
+
+    <div class="step">
+      <span class="num">1</span>
+      <div>
+        <h4>Sign in to Vercel</h4>
+        <p>Go to <code>vercel.com</code> and sign in. Choose <strong>"Continue with GitHub"</strong> so the two are linked from the start.</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <span class="num">2</span>
+      <div>
+        <h4>Start a new project</h4>
+        <p>From your Vercel dashboard, add a new project and import the <code>fluffygeek/elite-jobs</code> repository.</p>
+        <div class="where">
+          <span class="glyph">Look for:</span>
+          <p>A button near the top of the dashboard that says <strong>"Add New..."</strong>, then choose <strong>"Project"</strong> from the menu it opens. On the next screen, find <code>elite-jobs</code> in the list of your GitHub repositories and click <strong>"Import"</strong> next to it.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="step">
+      <span class="num">3</span>
+      <div>
+        <h4>Leave the build settings alone</h4>
+        <p>Vercel will notice this is a Next.js project automatically and fill in the right build settings by itself. You don't need to change anything here — just leave the defaults as they are.</p>
+      </div>
+    </div>
+
+    <div class="warn">
+      <span class="label">Don't click deploy yet</span>
+      <p>The site needs a database and two settings (further down this guide) before its first deploy will actually work. If Vercel's screen offers a "Deploy" button right now, skip past it and continue to Part 2 first.</p>
+    </div>
+  </section>
+
+  <section>
+    <p class="section-num">Part 2</p>
+    <h2>Add The Database</h2>
+    <p>Elite Jobs needs a Postgres database to store every job. The easiest way to get one is through Vercel's own Marketplace, which sets most of the connection details up for you automatically.</p>
+
+    <div class="step">
+      <span class="num">1</span>
+      <div>
+        <h4>Open the Storage tab</h4>
+        <p>Inside your new <code>elite-jobs</code> project on Vercel, find the tab across the top labeled <strong>"Storage"</strong>.</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <span class="num">2</span>
+      <div>
+        <h4>Create a Postgres database</h4>
+        <p>Click <strong>"Create Database"</strong> (or <strong>"Browse Marketplace"</strong>, depending on what Vercel shows you) and choose a <strong>Postgres</strong> option — Neon is a common, well-supported choice and has a free tier that's plenty for getting started.</p>
+        <div class="where">
+          <span class="glyph">Look for:</span>
+          <p>A card or tile with "Postgres" in its name and a "Free" or "Hobby" plan option underneath it.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="step">
+      <span class="num">3</span>
+      <div>
+        <h4>Connect it to your project</h4>
+        <p>Vercel will ask which project to connect the database to — choose <code>elite-jobs</code>. This step automatically adds a <code>DATABASE_URL</code> environment variable to your project, which is one of the two settings the app needs.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <p class="section-num">Part 3</p>
+    <h2>Set The Second Setting</h2>
+    <p>The database connection is handled for you, but the app also needs a secret key it uses to keep logins secure. This one you set by hand.</p>
+
+    <div class="step">
+      <span class="num">1</span>
+      <div>
+        <h4>Generate a secret</h4>
+        <p>On your own computer, open a terminal and run:</p>
+        <pre class="codeblock">npx auth secret</pre>
+        <p>This prints a long random string. Copy it.</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <span class="num">2</span>
+      <div>
+        <h4>Add it to Vercel</h4>
+        <div class="where">
+          <span class="glyph">Look for:</span>
+          <p>Your project's <strong>"Settings"</strong> tab, then <strong>"Environment Variables"</strong> in the menu on the left.</p>
+        </div>
+        <p>Add a new variable named exactly <code>AUTH_SECRET</code>, and paste in the string you copied as its value.</p>
+      </div>
+    </div>
+
+    <table>
+      <tr><th>Variable name</th><th>Where it comes from</th></tr>
+      <tr><td><code>DATABASE_URL</code></td><td>Added automatically in Part 2</td></tr>
+      <tr><td><code>AUTH_SECRET</code></td><td>You generate and add it here</td></tr>
+    </table>
+  </section>
+
+  <section>
+    <p class="section-num">Part 4</p>
+    <h2>Deploy</h2>
+
+    <div class="step">
+      <span class="num">1</span>
+      <div>
+        <h4>Click Deploy</h4>
+        <p>Back on the project screen, click <strong>"Deploy"</strong>. Vercel builds the site — this usually takes one to two minutes.</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <span class="num">2</span>
+      <div>
+        <h4>Run the database setup</h4>
+        <p>The database exists, but it's empty — it doesn't have the tables Elite Jobs needs yet (Markets, Users, Jobs, Invitations). From your own computer, with the project's code and a <code>.env.local</code> file pointing at the same <code>DATABASE_URL</code> Vercel is using, run:</p>
+        <pre class="codeblock">npm run db:migrate</pre>
+        <p>This only needs to be run once — and again in the future only if the app's data model changes.</p>
+      </div>
+    </div>
+
+    <div class="note">
+      <span class="label">You're live</span>
+      <p>From now on, every time new work is pushed to the <code>master</code> branch on GitHub, Vercel automatically rebuilds and redeploys the site — no manual step needed.</p>
+    </div>
+  </section>
+
+  <section>
+    <p class="section-num">Reference</p>
+    <h2>Finding Things Later</h2>
+    <table>
+      <tr><th>You want to...</th><th>Go to</th></tr>
+      <tr><td>See if a deploy succeeded</td><td>Project → <strong>"Deployments"</strong> tab</td></tr>
+      <tr><td>Change an environment variable</td><td>Project → <strong>"Settings"</strong> → <strong>"Environment Variables"</strong></td></tr>
+      <tr><td>Check the database directly</td><td>Project → <strong>"Storage"</strong> → your database → <strong>"Data"</strong> or <strong>"Query"</strong> tab</td></tr>
+      <tr><td>See error logs from the live site</td><td>Project → <strong>"Deployments"</strong> → click a deployment → <strong>"Runtime Logs"</strong></td></tr>
+    </table>
+  </section>
+
+  <footer>
+    Elite Jobs Deployment Guide — for whoever owns the Vercel account.
+  </footer>
+</div>
