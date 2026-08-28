@@ -23,6 +23,8 @@ function parseFieldValue(field: EditableJobField, raw: string): string | number 
     case "locate":
     case "directionalBore":
     case "prebury":
+    case "discrepancyFlag":
+    case "closedOut":
       return raw === "true";
     default:
       return raw;
@@ -170,6 +172,8 @@ export default async function JobsPage({
             <th>Directional Bore</th>
             <th>Prebury</th>
             <th>Tech Notes</th>
+            <th>Discrepancy Flag</th>
+            <th>Close-Out</th>
           </tr>
         </thead>
         <tbody>
@@ -185,6 +189,10 @@ export default async function JobsPage({
                   {isPossibleDuplicate && (
                     <span aria-label="Possible duplicate">⚠️ Possible duplicate</span>
                   )}
+                  {job.discrepancyFlag && (
+                    <span aria-label="Discrepancy flagged">🚩 Discrepancy flagged</span>
+                  )}
+                  {job.closedOut && <span aria-label="Closed out">✅ Closed out</span>}
                   <TextFieldForm jobId={job.id} field="address" value={job.address} />
                 </td>
                 <td>
@@ -220,6 +228,16 @@ export default async function JobsPage({
                 </td>
                 <td>
                   <TextFieldForm jobId={job.id} field="techNotes" value={job.techNotes} />
+                </td>
+                <td>
+                  <BooleanFieldForm
+                    jobId={job.id}
+                    field="discrepancyFlag"
+                    value={job.discrepancyFlag}
+                  />
+                </td>
+                <td>
+                  <BooleanFieldForm jobId={job.id} field="closedOut" value={job.closedOut} />
                 </td>
               </tr>
             );

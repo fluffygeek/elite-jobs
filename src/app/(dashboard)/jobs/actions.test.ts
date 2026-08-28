@@ -139,4 +139,78 @@ describe("jobs Server Actions", () => {
 
     expect(result.status).toBe("not_found");
   });
+
+  describe("Discrepancy Flag", () => {
+    it("allows an office_staff session to set and clear the flag", async () => {
+      authMock.mockResolvedValue(officeStaffSession());
+      const job = await seedJob();
+
+      const setResult = await updateJobFieldAction(job.id, "discrepancyFlag", false, true);
+      expect(setResult.status).toBe("success");
+      if (setResult.status === "success") {
+        expect(setResult.job.discrepancyFlag).toBe(true);
+      }
+
+      const clearResult = await updateJobFieldAction(job.id, "discrepancyFlag", true, false);
+      expect(clearResult.status).toBe("success");
+      if (clearResult.status === "success") {
+        expect(clearResult.job.discrepancyFlag).toBe(false);
+      }
+    });
+
+    it("rejects a technician session", async () => {
+      authMock.mockResolvedValue(technicianSession());
+      const job = await seedJob();
+
+      await expect(
+        updateJobFieldAction(job.id, "discrepancyFlag", false, true),
+      ).rejects.toThrow(/office staff only/i);
+    });
+
+    it("rejects when there is no session", async () => {
+      authMock.mockResolvedValue(null);
+      const job = await seedJob();
+
+      await expect(
+        updateJobFieldAction(job.id, "discrepancyFlag", false, true),
+      ).rejects.toThrow(/office staff only/i);
+    });
+  });
+
+  describe("Close-Out", () => {
+    it("allows an office_staff session to mark a Job Closed-Out and reopen it", async () => {
+      authMock.mockResolvedValue(officeStaffSession());
+      const job = await seedJob();
+
+      const closeResult = await updateJobFieldAction(job.id, "closedOut", false, true);
+      expect(closeResult.status).toBe("success");
+      if (closeResult.status === "success") {
+        expect(closeResult.job.closedOut).toBe(true);
+      }
+
+      const reopenResult = await updateJobFieldAction(job.id, "closedOut", true, false);
+      expect(reopenResult.status).toBe("success");
+      if (reopenResult.status === "success") {
+        expect(reopenResult.job.closedOut).toBe(false);
+      }
+    });
+
+    it("rejects a technician session", async () => {
+      authMock.mockResolvedValue(technicianSession());
+      const job = await seedJob();
+
+      await expect(updateJobFieldAction(job.id, "closedOut", false, true)).rejects.toThrow(
+        /office staff only/i,
+      );
+    });
+
+    it("rejects when there is no session", async () => {
+      authMock.mockResolvedValue(null);
+      const job = await seedJob();
+
+      await expect(updateJobFieldAction(job.id, "closedOut", false, true)).rejects.toThrow(
+        /office staff only/i,
+      );
+    });
+  });
 });
