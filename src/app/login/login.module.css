@@ -41,7 +41,7 @@
   left: 12%;
   width: 1px;
   height: 46%;
-  background: linear-gradient(to bottom, transparent, rgba(224, 99, 31, 0.25) 15%, rgba(31, 122, 140, 0.25) 85%, transparent);
+  background: linear-gradient(to bottom, transparent, rgba(140, 188, 58, 0.25) 15%, rgba(12, 113, 195, 0.25) 85%, transparent);
 }
 
 .signalPulse {
@@ -50,25 +50,25 @@
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: var(--orange);
-  box-shadow: 0 0 12px 3px rgba(224, 99, 31, 0.7);
+  background: var(--accent);
+  box-shadow: 0 0 12px 3px rgba(140, 188, 58, 0.7);
   animation: pulse-travel 3.6s ease-in-out infinite;
 }
 
 @keyframes pulse-travel {
   0% {
     top: 0%;
-    background: var(--orange);
-    box-shadow: 0 0 12px 3px rgba(224, 99, 31, 0.7);
+    background: var(--accent);
+    box-shadow: 0 0 12px 3px rgba(140, 188, 58, 0.7);
   }
   50% {
-    background: var(--teal);
-    box-shadow: 0 0 14px 4px rgba(31, 122, 140, 0.7);
+    background: var(--accent-blue);
+    box-shadow: 0 0 14px 4px rgba(12, 113, 195, 0.7);
   }
   100% {
     top: 100%;
-    background: var(--orange);
-    box-shadow: 0 0 12px 3px rgba(224, 99, 31, 0.7);
+    background: var(--accent);
+    box-shadow: 0 0 12px 3px rgba(140, 188, 58, 0.7);
   }
 }
 
@@ -119,7 +119,7 @@
   font-size: 1.1rem;
   letter-spacing: 0.05em;
   text-transform: uppercase;
-  color: var(--orange);
+  color: var(--accent-text);
   margin-bottom: 28px;
 }
 
@@ -131,11 +131,9 @@
 
 .heading {
   font-family: var(--font-display), sans-serif;
-  font-weight: 800;
+  font-weight: 700;
   font-size: 2.4rem;
-  text-transform: uppercase;
-  letter-spacing: 0.01em;
-  line-height: 1;
+  line-height: 1.1;
   color: var(--ink);
   margin-bottom: 8px;
 }
@@ -193,13 +191,13 @@
   border: none;
   border-radius: 8px;
   color: #fff;
-  background: var(--orange);
+  background: var(--accent-fill);
   cursor: pointer;
   transition: background-color 120ms ease;
 }
 
 .submit:hover:not(:disabled) {
-  background: var(--orange-dim);
+  background: var(--accent-fill-hover);
 }
 
 .submit:disabled {
@@ -223,7 +221,7 @@
 }
 
 .forgotLink {
-  color: var(--teal);
+  color: var(--accent-blue);
   font-weight: 600;
   text-decoration: none;
 }
