@@ -11,3 +11,11 @@ export async function sendInvitationEmail(email: string, acceptUrl: string): Pro
       `Body: Click the link below to accept your invitation and set your password:\n${acceptUrl}`,
   );
 }
+
+export async function sendPasswordResetEmail(email: string, resetUrl: string): Promise<void> {
+  console.log(
+    `[email:placeholder] Password reset email to ${email}\n` +
+      `Subject: Reset your Elite Jobs password\n` +
+      `Body: Click the link below to set a new password. This link expires in 1 hour:\n${resetUrl}`,
+  );
+}

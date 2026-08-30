@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useActionState } from "react";
 import { login, type LoginState } from "./actions";
 import styles from "./login.module.css";
@@ -45,6 +46,12 @@ export function LoginForm() {
       <button className={styles.submit} type="submit" disabled={pending}>
         {pending ? "Signing in…" : "Sign in"}
       </button>
+
+      <p className={styles.hint}>
+        <Link href="/forgot-password" className={styles.forgotLink}>
+          Forgot password?
+        </Link>
+      </p>
 
       <p className={styles.hint}>Don&apos;t have access yet? Ask your office for an invite.</p>
     </form>

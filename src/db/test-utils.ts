@@ -17,7 +17,11 @@ import * as schema from "./schema";
 export type TestDb = ReturnType<typeof drizzle<typeof schema>>;
 
 const MIGRATIONS_DIR = path.resolve(import.meta.dirname, "../../drizzle");
-const MIGRATION_FILES = ["0000_oval_bloodaxe.sql", "0001_brave_molly_hayes.sql"];
+const MIGRATION_FILES = [
+  "0000_oval_bloodaxe.sql",
+  "0001_brave_molly_hayes.sql",
+  "0002_remarkable_leper_queen.sql",
+];
 
 export async function createTestDb(): Promise<TestDb> {
   const client = new PGlite();

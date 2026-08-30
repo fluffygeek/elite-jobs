@@ -41,6 +41,18 @@ export const invitations = pgTable("invitations", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+// Structurally similar to `invitations` but a genuinely different concept
+// (resetting an existing account vs. onboarding a new one), so it gets its
+// own table rather than overloading `invitations` — see issue #28.
+export const passwordResets = pgTable("password_resets", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull().references(() => users.id),
+  token: text("token").notNull().unique(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  usedAt: timestamp("used_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 // Job.id is the client-generated UUID from offline submission (ADR 0001) —
 // the sync endpoint upserts on this id, never a server-assigned one.
 export const jobs = pgTable(
