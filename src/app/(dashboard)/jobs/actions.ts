@@ -18,6 +18,7 @@ import {
   type Job,
 } from "@/db/queries/jobs";
 import type { FiberCode } from "@/db/schema";
+import type { DashboardEditableJobFields } from "@/lib/domain/job-fields";
 
 // Only Office Staff may edit Jobs — mirrors src/app/(dashboard)/markets/actions.ts's
 // role gate. Real credential verification lands in ticket #4; the Server
@@ -47,18 +48,17 @@ export type EditableJobField =
   | "discrepancyFlag"
   | "closedOut";
 
-interface FieldValueMap {
-  address: string;
-  fiberCode: FiberCode;
-  fiberFootage: number;
-  boreFootage: number;
-  locate: boolean;
-  directionalBore: boolean;
-  prebury: boolean;
-  techNotes: string;
-  discrepancyFlag: boolean;
-  closedOut: boolean;
-}
+// Ties each EditableJobField to its value type by picking from the
+// dashboard-editable subset of the canonical Job schema (see
+// src/lib/domain/job-fields.ts) rather than an independently redeclared
+// field list. `Pick<...>` itself fails to compile if EditableJobField ever
+// names a field that doesn't exist on DashboardEditableJobFields — the
+// type-level constraint issue #22 asks for, without a separate unused
+// assertion. `Required<...>` restores the pre-refactor behavior that every
+// field here has a concrete value (never `undefined`) — this map describes
+// an already-persisted Job's current field value, not a fresh submission
+// where e.g. techNotes may be genuinely absent.
+export type FieldValueMap = Required<Pick<DashboardEditableJobFields, EditableJobField>>;
 
 export type UpdateJobFieldResult =
   | { status: "success"; job: Job }

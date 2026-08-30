@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { listJobs } from "@/db/queries/jobs";
 import { findDuplicateHintIds } from "@/lib/domain/duplicate-hint";
-import { updateJobFieldAction, type EditableJobField } from "./actions";
+import { updateJobFieldAction, type EditableJobField, type FieldValueMap } from "./actions";
 
 // Office Staff dashboard: every Job across every Market in one list (issue
 // #7). Plain Server Component + <form action> per editable field, no
@@ -15,7 +15,7 @@ export const dynamic = "force-dynamic";
 // hidden "old value" string carried in each field's form) parsed into the
 // right type before reaching the strongly-typed updateJobFieldAction. This
 // glue lives here, at the UI edge, rather than loosening the action's types.
-function parseFieldValue(field: EditableJobField, raw: string): string | number | boolean {
+function parseFieldValue(field: EditableJobField, raw: string): FieldValueMap[EditableJobField] {
   switch (field) {
     case "fiberFootage":
     case "boreFootage":

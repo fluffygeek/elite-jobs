@@ -4,31 +4,23 @@ import { db as defaultDb } from "@/db";
 import { jobs, markets, users, type FiberCode } from "@/db/schema";
 import { computeBoreCode } from "@/lib/domain/bore-payment-tier";
 import { deriveJobSite } from "@/lib/domain/job-site";
+import type { TechnicianWritableJobFields } from "@/lib/domain/job-fields";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Db = PgDatabase<any, typeof import("@/db/schema")>;
 
 export type Job = typeof jobs.$inferSelect;
 
-// Fields a Technician submits from the job intake form. Note what's
-// deliberately absent: jobSiteState/jobSiteZip and boreCode are never
-// accepted here — they're always server-computed below (see AGENTS.md's
-// ground rules and src/db/schema.ts's comments on those columns).
-export interface CreateJobInput {
-  id: string;
-  marketId: string;
+// Fields a Technician submits from the job intake form, plus the
+// server-injected technicianId (see src/lib/domain/job-fields.ts — never
+// part of the canonical schema itself, added by the caller after
+// validation). Note what's deliberately absent: jobSiteState/jobSiteZip and
+// boreCode are never accepted here — they're always server-computed below
+// (see AGENTS.md's ground rules and src/db/schema.ts's comments on those
+// columns).
+export type CreateJobInput = TechnicianWritableJobFields & {
   technicianId: string;
-  jobNumber: string;
-  date: Date;
-  address: string;
-  fiberCode: FiberCode;
-  fiberFootage: number;
-  boreFootage: number;
-  locate: boolean;
-  directionalBore: boolean;
-  prebury: boolean;
-  techNotes?: string;
-}
+};
 
 export class DuplicateJobNumberError extends Error {
   constructor(jobNumber: string) {
