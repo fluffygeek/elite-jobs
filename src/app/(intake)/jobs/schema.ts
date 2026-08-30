@@ -1,5 +1,5 @@
-import { z } from "zod";
-import { fiberCodeEnum } from "@/db/schema";
+import type { z } from "zod";
+import { technicianWritableJobFieldsSchema } from "@/lib/domain/job-fields";
 
 // Shared validation for a submitted Job, used by both the online path
 // (actions.ts's submitJob Server Action) and the offline-sync path
@@ -8,23 +8,10 @@ import { fiberCodeEnum } from "@/db/schema";
 // ground rule that Zod validation belongs "at every API boundary" and
 // applies especially to api/sync.
 //
-// The Job's UUID is client-generated (crypto.randomUUID() in the browser)
-// rather than server-assigned — see ADR 0001 and src/db/schema.ts's comment
-// on jobs.id. Both submitJob and the sync route treat it as the Job's
-// identity.
-export const submitJobSchema = z.object({
-  id: z.string().uuid(),
-  marketId: z.string().uuid(),
-  jobNumber: z.string().trim().min(1, "Job Number is required"),
-  date: z.coerce.date(),
-  address: z.string().trim().min(1, "Address is required"),
-  fiberCode: z.enum(fiberCodeEnum),
-  fiberFootage: z.coerce.number().int().min(0),
-  boreFootage: z.coerce.number().int().min(0),
-  locate: z.coerce.boolean(),
-  directionalBore: z.coerce.boolean(),
-  prebury: z.coerce.boolean(),
-  techNotes: z.string().trim().optional(),
-});
+// A thin re-export of the canonical Job schema's technician-writable subset
+// (src/lib/domain/job-fields.ts) — a Technician submission never carries
+// Discrepancy Flag or Close-Out (those are Office-Staff-only, added later at
+// dashboard edit time).
+export const submitJobSchema = technicianWritableJobFieldsSchema;
 
 export type SubmitJobInput = z.input<typeof submitJobSchema>;
