@@ -4,12 +4,24 @@
   --paper: #f4f7f9;
   --paper-raised: #ffffff;
   --line: #d7e0e7;
-  --orange: #e0631f;
-  --orange-dim: #c2560f;
-  --teal: #1f7a8c;
+  /* Elite TMG brand: #8cbc3a (CTA green, elitetmg.com's most-used accent)
+     and #0c71c3 (link/icon blue) — extracted from the live site, not
+     invented. The raw brand green fails WCAG contrast both as text-on-paper
+     and as white-on-fill (2.2-3:1), so it's split into three roles rather
+     than reused everywhere: --accent for decorative, non-text use (doesn't
+     need text-contrast math), --accent-text for green text/links (darkened
+     to clear 4.5:1 against --paper), --accent-fill for a solid button
+     background carrying white text (fixed across themes — a filled button
+     doesn't need to shift with the page, the same way the login screen's
+     signal panel is deliberately theme-independent). */
+  --accent: #8cbc3a;
+  --accent-text: #5b7a26;
+  --accent-fill: #5b7a26;
+  --accent-fill-hover: #4d6720;
+  --accent-blue: #0c71c3;
   --error: #c0392b;
   --error-soft: #fbe9e7;
-  --focus-ring: #0b6fa8;
+  --focus-ring: #0c71c3;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -19,12 +31,14 @@
     --paper: #101a23;
     --paper-raised: #172531;
     --line: #2a3d4d;
-    --orange: #f0894c;
-    --orange-dim: #f0894c;
-    --teal: #5fc2d1;
+    --accent: #a3d15c;
+    --accent-text: #a3d15c;
+    --accent-fill: #5b7a26;
+    --accent-fill-hover: #4d6720;
+    --accent-blue: #5b9fe0;
     --error: #e07a6d;
     --error-soft: #3a221f;
-    --focus-ring: #6cc4f2;
+    --focus-ring: #5b9fe0;
     color-scheme: dark;
   }
 }
