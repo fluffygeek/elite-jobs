@@ -17,7 +17,6 @@ import {
   updateJobTechNotes,
   type Job,
 } from "@/db/queries/jobs";
-import type { FiberCode } from "@/db/schema";
 import type { DashboardEditableJobFields } from "@/lib/domain/job-fields";
 
 // Only Office Staff may edit Jobs — mirrors src/app/(dashboard)/markets/actions.ts's
@@ -65,6 +64,40 @@ export type UpdateJobFieldResult =
   | { status: "conflict"; message: string }
   | { status: "not_found"; message: string };
 
+// Per-field update function shape, correlated to a single EditableJobField
+// `F` via FieldValueMap so `expectedOldValue`/`newValue` keep the field's own
+// value type (string, FiberCode, number, or boolean) rather than a widened
+// union or `any`.
+type UpdateJobFieldFn<F extends EditableJobField> = (
+  id: string,
+  expectedOldValue: FieldValueMap[F],
+  newValue: FieldValueMap[F],
+) => Promise<Job>;
+
+// Table-driven replacement for the old eleven-arm `switch` (issue #25,
+// Candidate C of the architecture review). This is a mapped type indexed by
+// EditableJobField — not a `Record<EditableJobField, V>` — because a Record
+// forces every entry to share one value type V, which is exactly what
+// doesn't hold here (updateJobFiberCode wants a FiberCode, updateJobLocate
+// wants a boolean, etc.). The mapped type keeps each entry's function
+// correlated to its own field via FieldValueMap[F], so every function below
+// is assigned here with its real, already-declared signature — no casts, no
+// `any`. TypeScript still requires every EditableJobField to be present (a
+// missing key is a compile error), preserving the switch's exhaustiveness
+// guarantee.
+const updateJobFieldDispatch: { [F in EditableJobField]: UpdateJobFieldFn<F> } = {
+  address: updateJobAddress,
+  fiberCode: updateJobFiberCode,
+  fiberFootage: updateJobFiberFootage,
+  boreFootage: updateJobBoreFootage,
+  locate: updateJobLocate,
+  directionalBore: updateJobDirectionalBore,
+  prebury: updateJobPrebury,
+  techNotes: updateJobTechNotes,
+  discrepancyFlag: updateJobDiscrepancyFlag,
+  closedOut: updateJobClosedOut,
+};
+
 /**
  * The single Office Staff entry point for correcting a Job field. Dispatches
  * to the matching per-field compare-and-swap query in src/db/queries/jobs.ts
@@ -88,54 +121,8 @@ export async function updateJobFieldAction<F extends EditableJobField>(
   await requireOfficeStaff();
 
   try {
-    let job: Job;
-
-    switch (field) {
-      case "address":
-        job = await updateJobAddress(id, expectedOldValue as string, newValue as string);
-        break;
-      case "fiberCode":
-        job = await updateJobFiberCode(
-          id,
-          expectedOldValue as FiberCode,
-          newValue as FiberCode,
-        );
-        break;
-      case "fiberFootage":
-        job = await updateJobFiberFootage(id, expectedOldValue as number, newValue as number);
-        break;
-      case "boreFootage":
-        job = await updateJobBoreFootage(id, expectedOldValue as number, newValue as number);
-        break;
-      case "locate":
-        job = await updateJobLocate(id, expectedOldValue as boolean, newValue as boolean);
-        break;
-      case "directionalBore":
-        job = await updateJobDirectionalBore(
-          id,
-          expectedOldValue as boolean,
-          newValue as boolean,
-        );
-        break;
-      case "prebury":
-        job = await updateJobPrebury(id, expectedOldValue as boolean, newValue as boolean);
-        break;
-      case "techNotes":
-        job = await updateJobTechNotes(id, expectedOldValue as string, newValue as string);
-        break;
-      case "discrepancyFlag":
-        job = await updateJobDiscrepancyFlag(id, expectedOldValue as boolean, newValue as boolean);
-        break;
-      case "closedOut":
-        job = await updateJobClosedOut(id, expectedOldValue as boolean, newValue as boolean);
-        break;
-      default: {
-        // Exhaustiveness check: TypeScript errors here if EditableJobField
-        // gains a member without a matching case above.
-        const exhaustive: never = field;
-        throw new Error(`Unhandled editable Job field: ${exhaustive}`);
-      }
-    }
+    const updateFn = updateJobFieldDispatch[field];
+    const job = await updateFn(id, expectedOldValue, newValue);
 
     revalidatePath("/jobs");
     return { status: "success", job };
