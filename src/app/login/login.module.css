@@ -221,3 +221,13 @@
   color: var(--ink-soft);
   text-align: center;
 }
+
+.forgotLink {
+  color: var(--teal);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.forgotLink:hover {
+  text-decoration: underline;
+}

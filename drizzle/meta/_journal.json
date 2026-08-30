@@ -15,6 +15,13 @@
       "when": 1787880593978,
       "tag": "0001_brave_molly_hayes",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1788056997444,
+      "tag": "0002_remarkable_leper_queen",
+      "breakpoints": true
     }
   ]
 }
