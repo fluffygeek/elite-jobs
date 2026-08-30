@@ -1,69 +1,16 @@
-import { redirect } from "next/navigation";
 import { listJobs } from "@/db/queries/jobs";
 import { findDuplicateHintIds } from "@/lib/domain/duplicate-hint";
-import { updateJobFieldAction, type EditableJobField, type FieldValueMap } from "./actions";
+import type { EditableJobField } from "./actions";
+import { submitFieldEdit } from "./edit-field";
 
 // Office Staff dashboard: every Job across every Market in one list (issue
 // #7). Plain Server Component + <form action> per editable field, no
 // client-state library — matches src/app/(dashboard)/markets/page.tsx's
 // established pattern. Editing prioritizes the compare-and-swap mechanism
 // being real and conflicts being clearly surfaced over visual polish (see
-// issue #7's brief).
+// issue #7's brief). Value-parsing and dispatch for field edits live in
+// ./edit-field.ts (issue #24) — this file only renders.
 export const dynamic = "force-dynamic";
-
-// Fields that are numbers/booleans need their raw FormData string (and the
-// hidden "old value" string carried in each field's form) parsed into the
-// right type before reaching the strongly-typed updateJobFieldAction. This
-// glue lives here, at the UI edge, rather than loosening the action's types.
-function parseFieldValue(field: EditableJobField, raw: string): FieldValueMap[EditableJobField] {
-  switch (field) {
-    case "fiberFootage":
-    case "boreFootage":
-      return Number(raw);
-    case "locate":
-    case "directionalBore":
-    case "prebury":
-    case "discrepancyFlag":
-    case "closedOut":
-      return raw === "true";
-    default:
-      return raw;
-  }
-}
-
-async function submitFieldEdit(
-  jobId: string,
-  field: EditableJobField,
-  expectedOldValueRaw: string,
-  formData: FormData,
-) {
-  "use server";
-
-  const newValueRaw = String(formData.get("newValue") ?? "");
-  const expectedOldValue = parseFieldValue(field, expectedOldValueRaw);
-  const newValue = parseFieldValue(field, newValueRaw);
-
-  // updateJobFieldAction's generic signature ties expectedOldValue/newValue's
-  // type to the specific field literal at the call site; here `field` is a
-  // runtime EditableJobField value rather than a literal, so TypeScript
-  // can't narrow the pair to a single member of FieldValueMap. The cast is
-  // confined to this UI-glue call site — the action itself, and its tests,
-  // stay fully typed.
-  const result = await updateJobFieldAction(
-    jobId,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    field as any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expectedOldValue as any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    newValue as any,
-  );
-
-  if (result.status === "success") {
-    redirect(`/jobs?notice=${encodeURIComponent(`${field} updated`)}`);
-  }
-  redirect(`/jobs?notice=${encodeURIComponent(result.message)}&error=1`);
-}
 
 function TextFieldForm({
   jobId,
