@@ -1,6 +1,6 @@
 <title>Elite Jobs Deployment Guide</title>
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@600;700;800&family=Open+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
 
   :root {
     --paper: #f4f7f9;
@@ -8,10 +8,10 @@
     --ink: #1c2b3a;
     --ink-soft: #48586b;
     --line: #d7e0e7;
-    --teal: #1f7a8c;
-    --teal-soft: #dcf0f2;
-    --orange: #e0631f;
-    --orange-soft: #fbe6d9;
+    --accent-blue: #0c71c3;
+    --accent-blue-soft: #dbeaf7;
+    --accent: #5b7a26;
+    --accent-soft: #eaf3dd;
     --good: #2f7a4f;
     --good-soft: #e2f2e7;
     --warn: #a35b00;
@@ -27,10 +27,10 @@
       --ink: #eaf0f4;
       --ink-soft: #a7b7c5;
       --line: #2a3d4d;
-      --teal: #5fc2d1;
-      --teal-soft: #1a3338;
-      --orange: #f0894c;
-      --orange-soft: #3a2a1e;
+      --accent-blue: #5b9fe0;
+      --accent-blue-soft: #1a2c3d;
+      --accent: #a3d15c;
+      --accent-soft: #26331a;
       --good: #6fce93;
       --good-soft: #1b3122;
       --warn: #e0ac4a;
@@ -46,10 +46,10 @@
     --ink: #eaf0f4;
     --ink-soft: #a7b7c5;
     --line: #2a3d4d;
-    --teal: #5fc2d1;
-    --teal-soft: #1a3338;
-    --orange: #f0894c;
-    --orange-soft: #3a2a1e;
+    --accent-blue: #5b9fe0;
+    --accent-blue-soft: #1a2c3d;
+    --accent: #a3d15c;
+    --accent-soft: #26331a;
     --good: #6fce93;
     --good-soft: #1b3122;
     --warn: #e0ac4a;
@@ -63,7 +63,7 @@
   body {
     background: var(--paper);
     color: var(--ink);
-    font-family: 'Public Sans', system-ui, sans-serif;
+    font-family: 'Open Sans', system-ui, sans-serif;
     font-size: 17px;
     line-height: 1.65;
     margin: 0;
@@ -74,7 +74,7 @@
 
   header.top {
     padding: 56px 0 32px;
-    border-bottom: 3px solid var(--teal);
+    border-bottom: 3px solid var(--accent-blue);
   }
 
   .eyebrow {
@@ -82,12 +82,12 @@
     font-size: 13px;
     letter-spacing: 0.12em;
     text-transform: uppercase;
-    color: var(--teal);
+    color: var(--accent-blue);
     margin: 0 0 10px;
   }
 
   h1 {
-    font-family: 'Barlow Condensed', sans-serif;
+    font-family: 'Poppins', sans-serif;
     font-weight: 800;
     font-size: clamp(2.2rem, 5.5vw, 3.2rem);
     line-height: 1.05;
@@ -111,14 +111,14 @@
     font-size: 12px;
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    background: var(--teal-soft);
-    color: var(--teal);
+    background: var(--accent-blue-soft);
+    color: var(--accent-blue);
     padding: 5px 10px;
     border-radius: 4px;
   }
 
   h2 {
-    font-family: 'Barlow Condensed', sans-serif;
+    font-family: 'Poppins', sans-serif;
     font-weight: 700;
     font-size: 1.9rem;
     text-transform: uppercase;
@@ -128,15 +128,15 @@
   }
 
   .section-num {
-    font-family: 'Barlow Condensed', sans-serif;
+    font-family: 'Poppins', sans-serif;
     font-weight: 800;
-    color: var(--teal);
+    color: var(--accent-blue);
     font-size: 1.05rem;
     letter-spacing: 0.08em;
   }
 
   h3 {
-    font-family: 'Barlow Condensed', sans-serif;
+    font-family: 'Poppins', sans-serif;
     font-weight: 700;
     font-size: 1.3rem;
     text-transform: uppercase;
@@ -162,9 +162,9 @@
     width: 44px;
     height: 44px;
     border-radius: 50%;
-    background: var(--teal-soft);
-    color: var(--teal);
-    font-family: 'Barlow Condensed', sans-serif;
+    background: var(--accent-blue-soft);
+    color: var(--accent-blue);
+    font-family: 'Poppins', sans-serif;
     font-weight: 800;
     font-size: 1.3rem;
     display: flex;
@@ -173,7 +173,7 @@
   }
 
   .step h4 {
-    font-family: 'Barlow Condensed', sans-serif;
+    font-family: 'Poppins', sans-serif;
     font-size: 1.25rem;
     text-transform: uppercase;
     letter-spacing: 0.01em;
@@ -186,8 +186,8 @@
     display: flex;
     gap: 10px;
     align-items: flex-start;
-    background: var(--orange-soft);
-    border-left: 4px solid var(--orange);
+    background: var(--accent-soft);
+    border-left: 4px solid var(--accent);
     border-radius: 6px;
     padding: 12px 16px;
     margin: 12px 0 0;
@@ -195,9 +195,9 @@
   }
 
   .where .glyph {
-    font-family: 'Barlow Condensed', sans-serif;
+    font-family: 'Poppins', sans-serif;
     font-weight: 800;
-    color: var(--orange);
+    color: var(--accent);
     flex-shrink: 0;
   }
 
@@ -209,8 +209,8 @@
   }
 
   code {
-    background: var(--teal-soft);
-    color: var(--teal);
+    background: var(--accent-blue-soft);
+    color: var(--accent-blue);
     padding: 2px 6px;
     border-radius: 4px;
   }
@@ -280,7 +280,7 @@
   .checklist .box {
     width: 18px;
     height: 18px;
-    border: 2px solid var(--teal);
+    border: 2px solid var(--accent-blue);
     border-radius: 4px;
     flex-shrink: 0;
     margin-top: 3px;
@@ -298,7 +298,7 @@
     border-bottom: 1px solid var(--line);
   }
   th {
-    font-family: 'Barlow Condensed', sans-serif;
+    font-family: 'Poppins', sans-serif;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.03em;
