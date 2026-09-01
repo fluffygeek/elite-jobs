@@ -8,7 +8,12 @@ import {
   FieldConflictError,
   JobNotFoundError,
   listJobs,
-  updateJobAddress,
+  UnsupportedMarketError,
+  updateJobAddressCity,
+  updateJobAddressLine2,
+  updateJobAddressState,
+  updateJobAddressStreet,
+  updateJobAddressZip,
   updateJobBoreFootage,
   updateJobClosedOut,
   updateJobDirectionalBore,
@@ -17,34 +22,37 @@ import {
   updateJobTechNotes,
 } from "@/db/queries/jobs";
 import { jobs, markets, users } from "@/db/schema";
-import { UnparsableAddressError } from "@/lib/domain/job-site";
 
 describe("createJob persistence", () => {
   let db: TestDb;
-  let marketId: string;
   let technicianId: string;
 
   beforeEach(async () => {
     db = await createTestDb();
-
-    const [market] = await db.insert(markets).values({ name: "Live Oak" }).returning();
-    marketId = market.id;
 
     const [technician] = await db
       .insert(users)
       .values({ email: "tech@example.com", role: "technician", passwordHash: "hash" })
       .returning();
     technicianId = technician.id;
+
+    // createJob no longer accepts marketId — it derives the Market from
+    // addressState (Florida/Georgia only, see issue #33) — so the Markets it
+    // can resolve into must actually exist.
+    await db.insert(markets).values([{ name: "Florida" }, { name: "Georgia" }]);
   });
 
   function baseInput(overrides: Partial<Parameters<typeof createJob>[0]> = {}) {
     return {
       id: randomUUID(),
-      marketId,
       technicianId,
       jobNumber: "J-100",
       date: new Date("2026-01-15T00:00:00Z"),
-      address: "104 E Welwood Dr, Savannah, GA 31419, USA",
+      addressStreet: "104 E Welwood Dr",
+      addressLine2: undefined,
+      addressCity: "Savannah",
+      addressState: "GA",
+      addressZip: "31419",
       fiberCode: "CP" as const,
       fiberFootage: 200,
       boreFootage: 750,
@@ -56,16 +64,36 @@ describe("createJob persistence", () => {
     };
   }
 
-  it("persists a Job with server-derived Job Site and Bore Code", async () => {
+  it("persists a Job with the structured address fields and server-derived Market/Bore Code", async () => {
     const job = await createJob(baseInput(), db);
 
-    expect(job.jobSiteState).toBe("GA");
-    expect(job.jobSiteZip).toBe("31419");
+    expect(job.addressStreet).toBe("104 E Welwood Dr");
+    expect(job.addressLine2).toBeNull();
+    expect(job.addressCity).toBe("Savannah");
+    expect(job.addressState).toBe("GA");
+    expect(job.addressZip).toBe("31419");
     expect(job.boreCode).toBe("DDB4 DBC1 x 300");
     expect(job.technicianId).toBe(technicianId);
-    expect(job.marketId).toBe(marketId);
     expect(job.jobNumber).toBe("J-100");
     expect(job.techNotes).toBe("Ran into a fence line");
+
+    const [market] = await db.select().from(markets).where(eq(markets.id, job.marketId));
+    expect(market.name).toBe("Georgia");
+  });
+
+  it("round-trips Address Line 2 when provided", async () => {
+    const job = await createJob(baseInput({ addressLine2: "Apt 4" }), db);
+    expect(job.addressLine2).toBe("Apt 4");
+  });
+
+  it("derives the Florida Market from an FL addressState", async () => {
+    const job = await createJob(
+      baseInput({ id: randomUUID(), jobNumber: "J-FL", addressState: "FL", addressCity: "Tampa" }),
+      db,
+    );
+
+    const [market] = await db.select().from(markets).where(eq(markets.id, job.marketId));
+    expect(market.name).toBe("Florida");
   });
 
   it("defaults techNotes to an empty string when omitted", async () => {
@@ -73,10 +101,11 @@ describe("createJob persistence", () => {
     expect(job.techNotes).toBe("");
   });
 
-  it("ignores any client-sent jobSite/boreCode-shaped fields by always recomputing them", async () => {
-    // createJob's input type doesn't even accept these fields — this test
-    // documents that boreCode is derived from boreFootage regardless of what
-    // else might be smuggled in via a loosely-typed caller (e.g. raw FormData).
+  it("ignores any client-sent boreCode-shaped fields by always recomputing it", async () => {
+    // createJob's input type doesn't even accept a client-sent boreCode —
+    // this test documents that it's derived from boreFootage regardless of
+    // what else might be smuggled in via a loosely-typed caller (e.g. raw
+    // FormData).
     const job = await createJob(baseInput({ boreFootage: 100 }), db);
     expect(job.boreCode).toBe("DDB1");
   });
@@ -90,29 +119,37 @@ describe("createJob persistence", () => {
   });
 
   it("allows the same job_number in a different Market", async () => {
-    const [otherMarket] = await db.insert(markets).values({ name: "Florida" }).returning();
-
     await createJob(baseInput({ id: randomUUID(), jobNumber: "J-SHARED" }), db);
     const job = await createJob(
-      baseInput({ id: randomUUID(), jobNumber: "J-SHARED", marketId: otherMarket.id }),
+      baseInput({
+        id: randomUUID(),
+        jobNumber: "J-SHARED",
+        addressState: "FL",
+        addressCity: "Tampa",
+      }),
       db,
     );
 
-    expect(job.marketId).toBe(otherMarket.id);
+    const [market] = await db.select().from(markets).where(eq(markets.id, job.marketId));
+    expect(market.name).toBe("Florida");
   });
 
-  it("throws UnparsableAddressError for an address without a trailing state/zip", async () => {
+  it("throws UnsupportedMarketError for a state outside FL/GA", async () => {
     await expect(
-      createJob(baseInput({ address: "Not a real address" }), db),
-    ).rejects.toBeInstanceOf(UnparsableAddressError);
+      createJob(baseInput({ addressState: "NY" }), db),
+    ).rejects.toBeInstanceOf(UnsupportedMarketError);
   });
 
   describe("listJobs", () => {
     it("returns every Job across every Market, joined with Market name and Technician email", async () => {
-      const [otherMarket] = await db.insert(markets).values({ name: "Florida" }).returning();
       await createJob(baseInput({ id: randomUUID(), jobNumber: "J-A" }), db);
       await createJob(
-        baseInput({ id: randomUUID(), jobNumber: "J-B", marketId: otherMarket.id }),
+        baseInput({
+          id: randomUUID(),
+          jobNumber: "J-B",
+          addressState: "FL",
+          addressCity: "Tampa",
+        }),
         db,
       );
 
@@ -120,7 +157,7 @@ describe("createJob persistence", () => {
 
       expect(rows).toHaveLength(2);
       const marketNames = rows.map((r) => r.marketName).sort();
-      expect(marketNames).toEqual(["Florida", "Live Oak"]);
+      expect(marketNames).toEqual(["Florida", "Georgia"]);
       expect(rows.every((r) => r.technicianEmail === "tech@example.com")).toBe(true);
     });
   });
@@ -147,26 +184,48 @@ describe("createJob persistence", () => {
       expect(current.techNotes).toBe("Staff A's note");
     });
 
-    it("allows two concurrent edits to two different fields on the same Job to both succeed", async () => {
+    it("allows two concurrent edits to two different address fields on the same Job to both succeed", async () => {
       const job = await createJob(
-        baseInput({ address: "104 E Welwood Dr, Savannah, GA 31419, USA", techNotes: "note" }),
+        baseInput({ addressStreet: "104 E Welwood Dr", techNotes: "note" }),
         db,
       );
 
-      const addressUpdate = await updateJobAddress(
+      const streetUpdate = await updateJobAddressStreet(
         job.id,
-        "104 E Welwood Dr, Savannah, GA 31419, USA",
-        "200 Peachtree St, Atlanta, GA 30303, USA",
+        "104 E Welwood Dr",
+        "200 Peachtree St",
         db,
       );
       const notesUpdate = await updateJobTechNotes(job.id, "note", "updated note", db);
 
-      expect(addressUpdate.address).toBe("200 Peachtree St, Atlanta, GA 30303, USA");
-      expect(addressUpdate.jobSiteState).toBe("GA");
-      expect(addressUpdate.jobSiteZip).toBe("30303");
+      expect(streetUpdate.addressStreet).toBe("200 Peachtree St");
       expect(notesUpdate.techNotes).toBe("updated note");
       // Neither write clobbered the other's field.
-      expect(notesUpdate.address).toBe("200 Peachtree St, Atlanta, GA 30303, USA");
+      expect(notesUpdate.addressStreet).toBe("200 Peachtree St");
+    });
+
+    it("updates Address City, State, and Zip independently via compare-and-swap", async () => {
+      const job = await createJob(baseInput(), db);
+
+      const afterCity = await updateJobAddressCity(job.id, "Savannah", "Atlanta", db);
+      expect(afterCity.addressCity).toBe("Atlanta");
+
+      const afterState = await updateJobAddressState(job.id, "GA", "GA", db);
+      expect(afterState.addressState).toBe("GA");
+
+      const afterZip = await updateJobAddressZip(job.id, "31419", "30303", db);
+      expect(afterZip.addressZip).toBe("30303");
+    });
+
+    it("round-trips Address Line 2 through compare-and-swap, including clearing it back to null", async () => {
+      const job = await createJob(baseInput({ addressLine2: undefined }), db);
+      expect(job.addressLine2).toBeNull();
+
+      const withLine2 = await updateJobAddressLine2(job.id, "", "Apt 4", db);
+      expect(withLine2.addressLine2).toBe("Apt 4");
+
+      const cleared = await updateJobAddressLine2(job.id, "Apt 4", "", db);
+      expect(cleared.addressLine2).toBeNull();
     });
 
     it("recomputes Bore Code when Bore Footage is updated via compare-and-swap", async () => {

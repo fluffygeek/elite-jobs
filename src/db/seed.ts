@@ -32,7 +32,7 @@ const FORCE = process.argv.includes("--force");
 
 const DEMO_PASSWORD = "Demo1234!";
 
-const DEMO_MARKETS = ["Live Oak", "Florida", "Georgia"] as const;
+const DEMO_MARKETS = ["Florida", "Georgia"] as const;
 
 async function ensureMarket(name: string): Promise<string> {
   const [existing] = await db.select().from(markets).where(eq(markets.name, name));
@@ -51,10 +51,13 @@ async function ensureUser(email: string, role: "technician" | "office_staff"): P
 
 interface DemoJob {
   jobNumber: string;
-  marketId: string;
   technicianId: string;
   date: Date;
-  address: string;
+  addressStreet: string;
+  addressLine2?: string;
+  addressCity: string;
+  addressState: string;
+  addressZip?: string;
   fiberCode: "CP" | "DDB";
   fiberFootage: number;
   boreFootage: number;
@@ -66,15 +69,21 @@ interface DemoJob {
   closedOut?: boolean;
 }
 
+// Market is no longer passed in — createJob derives it internally from
+// addressState (see src/db/queries/jobs.ts and issue #33), same as every
+// other caller.
 async function ensureJob(spec: DemoJob) {
   try {
     const job = await createJob({
       id: randomUUID(),
-      marketId: spec.marketId,
       technicianId: spec.technicianId,
       jobNumber: spec.jobNumber,
       date: spec.date,
-      address: spec.address,
+      addressStreet: spec.addressStreet,
+      addressLine2: spec.addressLine2,
+      addressCity: spec.addressCity,
+      addressState: spec.addressState,
+      addressZip: spec.addressZip,
       fiberCode: spec.fiberCode,
       fiberFootage: spec.fiberFootage,
       boreFootage: spec.boreFootage,
@@ -110,9 +119,8 @@ async function main() {
     return;
   }
 
-  const marketIds: Record<string, string> = {};
   for (const name of DEMO_MARKETS) {
-    marketIds[name] = await ensureMarket(name);
+    await ensureMarket(name);
     console.log(`market ready: ${name}`);
   }
 
@@ -122,13 +130,17 @@ async function main() {
   console.log(`office staff ready: demo.staff@elitetmg.com / ${DEMO_PASSWORD}`);
   void officeStaffId; // no Job field references the office staff account directly
 
+  // Market is derived from addressState alone (Florida/Georgia only — see
+  // issue #33), not passed in here.
   const jobs: DemoJob[] = [
     {
       jobNumber: "DEMO-001",
-      marketId: marketIds["Live Oak"],
       technicianId,
       date: new Date("2026-08-01"),
-      address: "104 E Welwood Dr, Savannah, GA 31419, USA",
+      addressStreet: "104 E Welwood Dr",
+      addressCity: "Savannah",
+      addressState: "GA",
+      addressZip: "31419",
       fiberCode: "CP",
       fiberFootage: 120,
       boreFootage: 100, // DDB1 tier
@@ -139,10 +151,12 @@ async function main() {
     },
     {
       jobNumber: "DEMO-002",
-      marketId: marketIds["Live Oak"],
       technicianId,
       date: new Date("2026-08-03"),
-      address: "3335 Ranch Rd, Marietta, GA 30066, USA",
+      addressStreet: "3335 Ranch Rd",
+      addressCity: "Marietta",
+      addressState: "GA",
+      addressZip: "30066",
       fiberCode: "DDB",
       fiberFootage: 200,
       boreFootage: 225, // DDB2 tier
@@ -152,10 +166,12 @@ async function main() {
     },
     {
       jobNumber: "DEMO-003",
-      marketId: marketIds["Georgia"],
       technicianId,
       date: new Date("2026-08-05"),
-      address: "512 Oak St, Savannah, GA 31401, USA",
+      addressStreet: "512 Oak St",
+      addressCity: "Savannah",
+      addressState: "GA",
+      addressZip: "31401",
       fiberCode: "DDB",
       fiberFootage: 300,
       boreFootage: 400, // DDB4 tier
@@ -167,10 +183,12 @@ async function main() {
     },
     {
       jobNumber: "DEMO-004",
-      marketId: marketIds["Georgia"],
       technicianId,
       date: new Date("2026-08-05"),
-      address: "512 Oak St, Savannah, GA 31401, USA",
+      addressStreet: "512 Oak St",
+      addressCity: "Savannah",
+      addressState: "GA",
+      addressZip: "31401",
       fiberCode: "CP",
       fiberFootage: 90,
       boreFootage: 600, // over 450, exercises the DBC1 overage code
@@ -180,10 +198,12 @@ async function main() {
     },
     {
       jobNumber: "DEMO-005",
-      marketId: marketIds["Florida"],
       technicianId,
       date: new Date("2026-07-20"),
-      address: "22 Palm Ave, Tampa, FL 33602, USA",
+      addressStreet: "22 Palm Ave",
+      addressCity: "Tampa",
+      addressState: "FL",
+      addressZip: "33602",
       fiberCode: "CP",
       fiberFootage: 150,
       boreFootage: 50,

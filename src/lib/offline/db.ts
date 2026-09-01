@@ -7,9 +7,11 @@ import type { TechnicianWritableJobFields } from "@/lib/domain/job-fields";
 // Server Action / api/sync route accept — plus a client-side `status` used
 // to drive the sync loop in ./sync.ts. `id` is the same client-generated
 // UUID used everywhere else in the identity model (ADR 0001) — see
-// new-job-form.tsx.
+// new-job-form.tsx. There is no `marketId` here (nor anywhere in
+// TechnicianWritableJobFields) — Market is derived server-side from
+// `addressState` at sync time (see src/db/queries/jobs.ts's createJob).
 //
-// Two deliberate divergences from the canonical shape, both kept on purpose
+// Three deliberate divergences from the canonical shape, all kept on purpose
 // rather than "fixed":
 // - `date` is a string, not a Date — IndexedDB structured clone handles
 //   Dates fine, but a plain string keeps this record trivially
@@ -21,9 +23,18 @@ import type { TechnicianWritableJobFields } from "@/lib/domain/job-fields";
 //   (`String(formData.get("techNotes") ?? "")`), so the offline queue record
 //   never actually has an absent techNotes — this override documents that
 //   instead of silently drifting from the canonical schema.
-export type QueuedJob = Omit<TechnicianWritableJobFields, "date" | "techNotes"> & {
+// - `addressLine2`/`addressZip` are required strings (possibly ""), not
+//   optional — same reasoning as techNotes: new-job-form.tsx always writes a
+//   string for every form field via `String(formData.get(...) ?? "")`, so
+//   the offline queue record never actually has these fields absent.
+export type QueuedJob = Omit<
+  TechnicianWritableJobFields,
+  "date" | "techNotes" | "addressLine2" | "addressZip"
+> & {
   date: string;
   techNotes: string;
+  addressLine2: string;
+  addressZip: string;
   status: "queued" | "synced";
   queuedAt: string;
 };

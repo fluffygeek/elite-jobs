@@ -8,7 +8,10 @@
 // Matching rule: exact Address match (case/whitespace-insensitive) + same
 // calendar date, per docs/architecture.md's "Missing pieces" note that an
 // exact match is the deliberate MVP starting point, tightened later if it
-// proves noisy.
+// proves noisy. "Address" here is the composed structured-fields string (see
+// src/lib/domain/format-address.ts) — issue #33 replaced the single
+// free-text Address column with structured fields, but this matching rule's
+// behavior is unchanged: it still compares the full readable address.
 
 export interface DuplicateHintCandidate {
   id: string;

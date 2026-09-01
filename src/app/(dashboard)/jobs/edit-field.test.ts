@@ -23,8 +23,8 @@ vi.mock("next/navigation", () => ({
 import { parseFieldValue, submitFieldEdit } from "./edit-field";
 
 describe("parseFieldValue", () => {
-  it("parses a string field (e.g. address) as-is", () => {
-    expect(parseFieldValue("address", "123 Main St")).toBe("123 Main St");
+  it("parses a string field (e.g. addressStreet) as-is", () => {
+    expect(parseFieldValue("addressStreet", "123 Main St")).toBe("123 Main St");
   });
 
   it("parses techNotes as-is", () => {

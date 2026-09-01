@@ -1,9 +1,10 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import type { AnyPgColumn, PgDatabase } from "drizzle-orm/pg-core";
 import { db as defaultDb } from "@/db";
 import { jobs, markets, users, type FiberCode } from "@/db/schema";
 import { computeBoreCode } from "@/lib/domain/bore-payment-tier";
-import { deriveJobSite } from "@/lib/domain/job-site";
+import { resolveMarketNameForState } from "@/lib/domain/market-from-state";
+import { getMarketByName } from "@/db/queries/markets";
 import type { TechnicianWritableJobFields } from "@/lib/domain/job-fields";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -14,10 +15,11 @@ export type Job = typeof jobs.$inferSelect;
 // Fields a Technician submits from the job intake form, plus the
 // server-injected technicianId (see src/lib/domain/job-fields.ts — never
 // part of the canonical schema itself, added by the caller after
-// validation). Note what's deliberately absent: jobSiteState/jobSiteZip and
-// boreCode are never accepted here — they're always server-computed below
-// (see AGENTS.md's ground rules and src/db/schema.ts's comments on those
-// columns).
+// validation). Note what's deliberately absent: `marketId` is never accepted
+// here — createJob derives it internally from `addressState` (see
+// resolveMarketNameForState below) — and boreCode is always server-computed
+// (see AGENTS.md's ground rules and src/db/schema.ts's comment on that
+// column).
 export type CreateJobInput = TechnicianWritableJobFields & {
   technicianId: string;
 };
@@ -27,6 +29,34 @@ export class DuplicateJobNumberError extends Error {
     super(`A Job with number "${jobNumber}" already exists in this Market.`);
     this.name = "DuplicateJobNumberError";
   }
+}
+
+// Thrown when a Job's addressState doesn't resolve to one of the two
+// supported Markets (Florida or Georgia) — see
+// src/lib/domain/market-from-state.ts. Distinct from DuplicateJobNumberError
+// (a different, unrelated rejection reason) per issue #33's spec.
+export class UnsupportedMarketError extends Error {
+  constructor(state: string) {
+    super(`No supported Market for state "${state}". Supported states: FL, GA.`);
+    this.name = "UnsupportedMarketError";
+  }
+}
+
+// Resolves the Market a new Job belongs to from its addressState — the only
+// place `marketId` is ever produced; never accepted as client input (see
+// CreateJobInput above and issue #33's spec).
+async function resolveMarketId(state: string, db: Db): Promise<string> {
+  const marketName = resolveMarketNameForState(state);
+  if (!marketName) {
+    throw new UnsupportedMarketError(state);
+  }
+
+  const market = await getMarketByName(marketName, db);
+  if (!market) {
+    throw new UnsupportedMarketError(state);
+  }
+
+  return market.id;
 }
 
 // Postgres unique_violation SQLSTATE. Both the postgres.js driver and PGlite
@@ -55,14 +85,15 @@ function isUniqueViolation(error: unknown): boolean {
 }
 
 /**
- * Creates a Job. Job Site (state + zip) is derived from the Address and Bore
- * Code is computed from Bore Footage — both server-side, both never trusted
- * from client input (see the domain functions in src/lib/domain/). Rejects a
- * duplicate `(market_id, job_number)` with a specific, named error rather
- * than letting the raw Postgres constraint error leak to callers.
+ * Creates a Job. Market is derived from addressState (never accepted as
+ * client input — see resolveMarketId above) and Bore Code is computed from
+ * Bore Footage — both server-side. Rejects a duplicate `(market_id,
+ * job_number)` with a specific, named error rather than letting the raw
+ * Postgres constraint error leak to callers, and rejects an addressState
+ * outside FL/GA with UnsupportedMarketError.
  */
 export async function createJob(input: CreateJobInput, db: Db = defaultDb) {
-  const jobSite = deriveJobSite(input.address);
+  const marketId = await resolveMarketId(input.addressState, db);
   const boreCode = computeBoreCode(input.boreFootage);
 
   try {
@@ -70,13 +101,15 @@ export async function createJob(input: CreateJobInput, db: Db = defaultDb) {
       .insert(jobs)
       .values({
         id: input.id,
-        marketId: input.marketId,
+        marketId,
         technicianId: input.technicianId,
         jobNumber: input.jobNumber,
         date: input.date,
-        address: input.address,
-        jobSiteState: jobSite.state,
-        jobSiteZip: jobSite.zip,
+        addressStreet: input.addressStreet,
+        addressLine2: input.addressLine2 || null,
+        addressCity: input.addressCity,
+        addressState: input.addressState,
+        addressZip: input.addressZip || null,
         fiberCode: input.fiberCode,
         fiberFootage: input.fiberFootage,
         boreFootage: input.boreFootage,
@@ -114,11 +147,14 @@ function submittedDataMatches(
   input: CreateJobInput,
 ): boolean {
   return (
-    existing.marketId === input.marketId &&
     existing.technicianId === input.technicianId &&
     existing.jobNumber === input.jobNumber &&
     existing.date.getTime() === input.date.getTime() &&
-    existing.address === input.address &&
+    existing.addressStreet === input.addressStreet &&
+    (existing.addressLine2 ?? "") === (input.addressLine2 ?? "") &&
+    existing.addressCity === input.addressCity &&
+    existing.addressState === input.addressState &&
+    (existing.addressZip ?? "") === (input.addressZip ?? "") &&
     existing.fiberCode === input.fiberCode &&
     existing.fiberFootage === input.fiberFootage &&
     existing.boreFootage === input.boreFootage &&
@@ -229,10 +265,18 @@ async function casUpdateJobField(
   setValues: Record<string, any>,
   db: Db,
 ): Promise<Job> {
+  // A plain `eq(column, null)` compiles to `column = NULL`, which is never
+  // true in SQL even when the column genuinely is NULL — so a nullable
+  // field (addressLine2, addressZip) whose expected old value is `null`
+  // needs `IS NULL` instead, or its compare-and-swap would spuriously
+  // report a conflict on every attempt to match a currently-null value.
+  const matchesExpectedOldValue =
+    expectedOldValue === null ? isNull(column) : eq(column, expectedOldValue);
+
   const [updated] = await db
     .update(jobs)
     .set(setValues)
-    .where(and(eq(jobs.id, id), eq(column, expectedOldValue)))
+    .where(and(eq(jobs.id, id), matchesExpectedOldValue))
     .returning();
 
   if (updated) {
@@ -246,25 +290,97 @@ async function casUpdateJobField(
   throw new FieldConflictError(fieldLabel);
 }
 
-/**
- * Updates a Job's Address via compare-and-swap. Job Site (state + zip) is
- * re-derived from the new Address and persisted alongside it — it's derived,
- * never entered independently (see CONTEXT.md's "Job Site" entry) — so a
- * corrected Address always keeps its Job Site in sync.
- */
-export async function updateJobAddress(
+// Updates a Job's structured address fields via compare-and-swap. Each field
+// is its own field-group of one, same as every other CAS updater below —
+// there's no re-derivation to keep in sync here (unlike the old single
+// Address + Job Site pair), since Market is only ever resolved once, at
+// creation time, and editing an address field afterward doesn't move a Job
+// between Markets (see src/db/queries/jobs.ts's createJob and issue #33's
+// spec — moving Markets on a correction is explicitly not this ticket's
+// concern). `addressLine2`/`addressZip` are nullable columns; the empty
+// string a plain-text dashboard form submits for "no value" is normalized to
+// `null` on write and back to `""` for CAS comparison, so callers never have
+// to reason about the null/empty-string distinction themselves.
+function normalizeNullableAddressPart(value: string): string | null {
+  return value === "" ? null : value;
+}
+
+export async function updateJobAddressStreet(
   id: string,
-  expectedOldAddress: string,
-  newAddress: string,
+  expectedOldStreet: string,
+  newStreet: string,
   db: Db = defaultDb,
 ): Promise<Job> {
-  const jobSite = deriveJobSite(newAddress);
   return casUpdateJobField(
     id,
-    "Address",
-    jobs.address,
-    expectedOldAddress,
-    { address: newAddress, jobSiteState: jobSite.state, jobSiteZip: jobSite.zip, updatedAt: new Date() },
+    "Address Street",
+    jobs.addressStreet,
+    expectedOldStreet,
+    { addressStreet: newStreet, updatedAt: new Date() },
+    db,
+  );
+}
+
+export async function updateJobAddressLine2(
+  id: string,
+  expectedOldLine2: string,
+  newLine2: string,
+  db: Db = defaultDb,
+): Promise<Job> {
+  return casUpdateJobField(
+    id,
+    "Address Line 2",
+    jobs.addressLine2,
+    normalizeNullableAddressPart(expectedOldLine2),
+    { addressLine2: normalizeNullableAddressPart(newLine2), updatedAt: new Date() },
+    db,
+  );
+}
+
+export async function updateJobAddressCity(
+  id: string,
+  expectedOldCity: string,
+  newCity: string,
+  db: Db = defaultDb,
+): Promise<Job> {
+  return casUpdateJobField(
+    id,
+    "Address City",
+    jobs.addressCity,
+    expectedOldCity,
+    { addressCity: newCity, updatedAt: new Date() },
+    db,
+  );
+}
+
+export async function updateJobAddressState(
+  id: string,
+  expectedOldState: string,
+  newState: string,
+  db: Db = defaultDb,
+): Promise<Job> {
+  return casUpdateJobField(
+    id,
+    "Address State",
+    jobs.addressState,
+    expectedOldState,
+    { addressState: newState, updatedAt: new Date() },
+    db,
+  );
+}
+
+export async function updateJobAddressZip(
+  id: string,
+  expectedOldZip: string,
+  newZip: string,
+  db: Db = defaultDb,
+): Promise<Job> {
+  return casUpdateJobField(
+    id,
+    "Address Zip",
+    jobs.addressZip,
+    normalizeNullableAddressPart(expectedOldZip),
+    { addressZip: normalizeNullableAddressPart(newZip), updatedAt: new Date() },
     db,
   );
 }

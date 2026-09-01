@@ -1,5 +1,6 @@
 import { listJobs } from "@/db/queries/jobs";
 import { findDuplicateHintIds } from "@/lib/domain/duplicate-hint";
+import { formatAddress } from "@/lib/domain/format-address";
 import type { EditableJobField } from "./actions";
 import { submitFieldEdit } from "./edit-field";
 
@@ -92,7 +93,7 @@ export default async function JobsPage({
   const { notice, error } = await searchParams;
   const rows = await listJobs();
   const duplicateIds = findDuplicateHintIds(
-    rows.map(({ job }) => ({ id: job.id, address: job.address, date: job.date })),
+    rows.map(({ job }) => ({ id: job.id, address: formatAddress(job), date: job.date })),
   );
 
   return (
@@ -146,7 +147,16 @@ export default async function JobsPage({
                     <span aria-label="Discrepancy flagged">🚩 Discrepancy flagged</span>
                   )}
                   {job.closedOut && <span aria-label="Closed out">✅ Closed out</span>}
-                  <TextFieldForm jobId={job.id} field="address" value={job.address} />
+                  <p>{formatAddress(job)}</p>
+                  <TextFieldForm jobId={job.id} field="addressStreet" value={job.addressStreet} />
+                  <TextFieldForm
+                    jobId={job.id}
+                    field="addressLine2"
+                    value={job.addressLine2 ?? ""}
+                  />
+                  <TextFieldForm jobId={job.id} field="addressCity" value={job.addressCity} />
+                  <TextFieldForm jobId={job.id} field="addressState" value={job.addressState} />
+                  <TextFieldForm jobId={job.id} field="addressZip" value={job.addressZip ?? ""} />
                 </td>
                 <td>
                   <FiberCodeFieldForm jobId={job.id} value={job.fiberCode} />

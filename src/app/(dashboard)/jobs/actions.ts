@@ -5,7 +5,11 @@ import { auth } from "../../../../auth";
 import {
   FieldConflictError,
   JobNotFoundError,
-  updateJobAddress,
+  updateJobAddressCity,
+  updateJobAddressLine2,
+  updateJobAddressState,
+  updateJobAddressStreet,
+  updateJobAddressZip,
   updateJobBoreFootage,
   updateJobClosedOut,
   updateJobDirectionalBore,
@@ -36,7 +40,11 @@ async function requireOfficeStaff() {
 // rather than an arbitrary client-sent string, so the field name itself is
 // checked at compile time everywhere this type is used.
 export type EditableJobField =
-  | "address"
+  | "addressStreet"
+  | "addressLine2"
+  | "addressCity"
+  | "addressState"
+  | "addressZip"
   | "fiberCode"
   | "fiberFootage"
   | "boreFootage"
@@ -86,7 +94,11 @@ type UpdateJobFieldFn<F extends EditableJobField> = (
 // missing key is a compile error), preserving the switch's exhaustiveness
 // guarantee.
 const updateJobFieldDispatch: { [F in EditableJobField]: UpdateJobFieldFn<F> } = {
-  address: updateJobAddress,
+  addressStreet: updateJobAddressStreet,
+  addressLine2: updateJobAddressLine2,
+  addressCity: updateJobAddressCity,
+  addressState: updateJobAddressState,
+  addressZip: updateJobAddressZip,
   fiberCode: updateJobFiberCode,
   fiberFootage: updateJobFiberFootage,
   boreFootage: updateJobBoreFootage,

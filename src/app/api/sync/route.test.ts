@@ -38,14 +38,15 @@ function postRequest(body: unknown) {
 }
 
 describe("POST /api/sync", () => {
-  let marketId: string;
   let technicianId: string;
 
   beforeEach(async () => {
     authMock.mockReset();
 
-    const [market] = await db.insert(markets).values({ name: "Live Oak" }).returning();
-    marketId = market.id;
+    // Market is derived server-side from addressState (FL/GA only, see
+    // issue #33) rather than submitted — so the Markets it can resolve into
+    // must actually exist.
+    await db.insert(markets).values([{ name: "Florida" }, { name: "Georgia" }]);
 
     const [technician] = await db
       .insert(users)
@@ -57,10 +58,12 @@ describe("POST /api/sync", () => {
   function validBody(overrides: Record<string, unknown> = {}) {
     return {
       id: randomUUID(),
-      marketId,
       jobNumber: `J-${randomUUID()}`,
       date: "2026-01-15",
-      address: "104 E Welwood Dr, Savannah, GA 31419, USA",
+      addressStreet: "104 E Welwood Dr",
+      addressCity: "Savannah",
+      addressState: "GA",
+      addressZip: "31419",
       fiberCode: "CP",
       fiberFootage: 200,
       boreFootage: 300,
@@ -100,7 +103,9 @@ describe("POST /api/sync", () => {
 
     const [job] = await db.select().from(jobs).where(eq(jobs.id, id));
     expect(job.technicianId).toBe(technicianId);
-    expect(job.marketId).toBe(marketId);
+
+    const [market] = await db.select().from(markets).where(eq(markets.id, job.marketId));
+    expect(market.name).toBe("Georgia");
   });
 
   it("is a no-op success when the same client-generated id is retried with identical data", async () => {
@@ -154,7 +159,17 @@ describe("POST /api/sync", () => {
   it("returns a validation error for a malformed body", async () => {
     authMock.mockResolvedValue(technicianSession(technicianId));
 
-    const response = await POST(postRequest(validBody({ marketId: "not-a-uuid" })));
+    const response = await POST(postRequest(validBody({ addressStreet: "" })));
+    const payload = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(payload).toMatchObject({ ok: false, error: "validation" });
+  });
+
+  it("returns a validation error for a state outside FL/GA", async () => {
+    authMock.mockResolvedValue(technicianSession(technicianId));
+
+    const response = await POST(postRequest(validBody({ addressState: "NY" })));
     const payload = await response.json();
 
     expect(response.status).toBe(400);

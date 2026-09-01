@@ -11,10 +11,13 @@ import { syncQueuedJobs } from "./sync";
 function queuedJob(overrides: Partial<QueuedJob> = {}): QueuedJob {
   return {
     id: randomUUID(),
-    marketId: randomUUID(),
     jobNumber: `J-${randomUUID()}`,
     date: "2026-01-15",
-    address: "104 E Welwood Dr, Savannah, GA 31419, USA",
+    addressStreet: "104 E Welwood Dr",
+    addressLine2: "",
+    addressCity: "Savannah",
+    addressState: "GA",
+    addressZip: "31419",
     fiberCode: "CP",
     fiberFootage: 200,
     boreFootage: 300,

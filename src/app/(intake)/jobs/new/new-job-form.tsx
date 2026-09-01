@@ -6,13 +6,7 @@ import { offlineDb } from "@/lib/offline/db";
 import { initSyncTriggers, syncQueuedJobs } from "@/lib/offline/sync";
 import styles from "./new-job-form.module.css";
 
-interface Market {
-  id: string;
-  name: string;
-}
-
 interface NewJobFormProps {
-  markets: Market[];
   fiberCodes: readonly FiberCode[];
 }
 
@@ -28,7 +22,7 @@ const today = () => new Date().toISOString().slice(0, 10);
 // on reconnect, and periodically while the tab is foregrounded, so a Job
 // queued while offline sends itself once connectivity returns without the
 // Technician doing anything else.
-export function NewJobForm({ markets, fiberCodes }: NewJobFormProps) {
+export function NewJobForm({ fiberCodes }: NewJobFormProps) {
   const [status, setStatus] = useState<
     "idle" | "saving" | "saved-offline" | "synced" | "error"
   >("idle");
@@ -52,10 +46,13 @@ export function NewJobForm({ markets, fiberCodes }: NewJobFormProps) {
       const id = crypto.randomUUID();
       await offlineDb.queuedJobs.add({
         id,
-        marketId: String(formData.get("marketId") ?? ""),
         jobNumber,
         date: String(formData.get("date") ?? ""),
-        address: String(formData.get("address") ?? ""),
+        addressStreet: String(formData.get("addressStreet") ?? ""),
+        addressLine2: String(formData.get("addressLine2") ?? ""),
+        addressCity: String(formData.get("addressCity") ?? ""),
+        addressState: String(formData.get("addressState") ?? ""),
+        addressZip: String(formData.get("addressZip") ?? ""),
         fiberCode: String(formData.get("fiberCode") ?? "") as FiberCode,
         fiberFootage: Number(formData.get("fiberFootage") ?? 0),
         boreFootage: Number(formData.get("boreFootage") ?? 0),
@@ -101,20 +98,6 @@ export function NewJobForm({ markets, fiberCodes }: NewJobFormProps) {
       ) : null}
 
       <div className={styles.field}>
-        <label htmlFor="marketId">Market</label>
-        <select id="marketId" name="marketId" required defaultValue="">
-          <option value="" disabled>
-            Select a Market
-          </option>
-          {markets.map((market) => (
-            <option key={market.id} value={market.id}>
-              {market.name}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      <div className={styles.field}>
         <label htmlFor="jobNumber">Job Number</label>
         <input id="jobNumber" name="jobNumber" type="text" required />
       </div>
@@ -125,14 +108,41 @@ export function NewJobForm({ markets, fiberCodes }: NewJobFormProps) {
       </div>
 
       <div className={styles.field}>
-        <label htmlFor="address">Address</label>
+        <label htmlFor="addressStreet">Street</label>
         <input
-          id="address"
-          name="address"
+          id="addressStreet"
+          name="addressStreet"
           type="text"
-          placeholder="123 Main St, City, ST 00000"
+          placeholder="123 Main St"
           required
         />
+      </div>
+
+      <div className={styles.field}>
+        <label htmlFor="addressLine2">Address Line 2</label>
+        <input id="addressLine2" name="addressLine2" type="text" placeholder="Apt 4" />
+      </div>
+
+      <div className={styles.field}>
+        <label htmlFor="addressCity">City</label>
+        <input id="addressCity" name="addressCity" type="text" required />
+      </div>
+
+      <div className={styles.field}>
+        <label htmlFor="addressState">State</label>
+        <input
+          id="addressState"
+          name="addressState"
+          type="text"
+          placeholder="FL"
+          maxLength={2}
+          required
+        />
+      </div>
+
+      <div className={styles.field}>
+        <label htmlFor="addressZip">Zip</label>
+        <input id="addressZip" name="addressZip" type="text" placeholder="33602" />
       </div>
 
       <div className={styles.field}>
