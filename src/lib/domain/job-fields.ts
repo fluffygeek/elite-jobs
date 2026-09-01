@@ -10,18 +10,32 @@ import { fiberCodeEnum } from "@/db/schema";
 // - `technicianId`: server-injected from the authenticated session *after*
 //   validation, in both the online (submitJob) and offline (api/sync) paths.
 //   Never part of what a client submits.
-// - Job Site and Bore Code: server-computed, never client-input — see
-//   ComputedJobFields below, a structurally separate type that isn't
-//   reachable via any `.omit()` on this schema.
+// - Bore Code: server-computed, never client-input — see ComputedJobFields
+//   below, a structurally separate type that isn't reachable via any
+//   `.omit()` on this schema.
+// - `marketId`: server-derived from `addressState` at creation time (see
+//   src/lib/domain/market-from-state.ts and src/db/queries/jobs.ts's
+//   createJob) — not a field a client ever submits, so it isn't declared on
+//   this schema at all.
 export const jobFieldsSchema = z.object({
   // Client-generated UUID (crypto.randomUUID() in the browser) that is the
   // Job's identity end-to-end — see ADR 0001 and src/db/schema.ts's comment
   // on jobs.id. Genuinely client-submitted data, unlike technicianId.
   id: z.string().uuid(),
-  marketId: z.string().uuid(),
   jobNumber: z.string().trim().min(1, "Job Number is required"),
   date: z.coerce.date(),
-  address: z.string().trim().min(1, "Address is required"),
+  // Structured address fields (issue #33) — replaces the old single free-text
+  // `address` field. Street/City/State are mandatory; Line 2 and Zip are
+  // optional. Market is derived server-side from `addressState` alone (see
+  // src/lib/domain/market-from-state.ts and src/db/queries/jobs.ts's
+  // createJob) — never submitted by the client, hence no `marketId` field
+  // here at all (it was already meant to be server-derived, not client
+  // input — this makes that literal).
+  addressStreet: z.string().trim().min(1, "Street is required"),
+  addressLine2: z.string().trim().optional(),
+  addressCity: z.string().trim().min(1, "City is required"),
+  addressState: z.string().trim().min(1, "State is required"),
+  addressZip: z.string().trim().optional(),
   fiberCode: z.enum(fiberCodeEnum),
   fiberFootage: z.coerce.number().int().min(0),
   boreFootage: z.coerce.number().int().min(0),
@@ -44,16 +58,15 @@ export const jobFieldsSchema = z.object({
 export type JobFields = z.infer<typeof jobFieldsSchema>;
 export type JobFieldsInput = z.input<typeof jobFieldsSchema>;
 
-// Job Site (state + zip, derived from Address) and Bore Code (derived from
-// Bore Footage) are computed server-side on every write — see
-// src/lib/domain/job-site.ts and src/lib/domain/bore-payment-tier.ts, and
-// AGENTS.md's "Bore Code is computed, never client-trusted" ground rule.
-// This is a genuinely different type, not a `.omit()`/`.pick()` of
-// jobFieldsSchema, so there's no way to accidentally widen the input schema
-// to accept these from a client.
+// Bore Code is computed server-side on every write from Bore Footage — see
+// src/lib/domain/bore-payment-tier.ts and AGENTS.md's "Bore Code is
+// computed, never client-trusted" ground rule. This is a genuinely different
+// type, not a `.omit()`/`.pick()` of jobFieldsSchema, so there's no way to
+// accidentally widen the input schema to accept this from a client. (Market
+// is also server-derived — see createJob — but it's not a "computed field"
+// stored back onto the Job the way Bore Code is; it's a foreign key resolved
+// once at creation time from addressState.)
 export interface ComputedJobFields {
-  jobSiteState: string;
-  jobSiteZip: string;
   boreCode: string;
 }
 
@@ -71,11 +84,12 @@ export const technicianWritableJobFieldsSchema = jobFieldsSchema.omit({
 export type TechnicianWritableJobFields = z.infer<typeof technicianWritableJobFieldsSchema>;
 
 // The subset Office Staff may correct after the fact (src/app/(dashboard)/jobs/actions.ts) —
-// everything except Job Number, Market, and Date, which aren't correctable
-// per CONTEXT.md's immutability of those fields once submitted.
+// everything except Job Number and Date, which aren't correctable per
+// CONTEXT.md's immutability of those fields once submitted. (Market itself
+// isn't a field on this schema at all — see createJob — so there's nothing
+// to omit for it.)
 export const dashboardEditableJobFieldsSchema = jobFieldsSchema.omit({
   jobNumber: true,
-  marketId: true,
   date: true,
 });
 

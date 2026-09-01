@@ -6,9 +6,40 @@ export interface SyncSummary {
 }
 
 function toSyncPayload(job: QueuedJob) {
-  const { id, marketId, jobNumber, date, address, fiberCode, fiberFootage, boreFootage, locate, directionalBore, prebury, techNotes } =
-    job;
-  return { id, marketId, jobNumber, date, address, fiberCode, fiberFootage, boreFootage, locate, directionalBore, prebury, techNotes };
+  const {
+    id,
+    jobNumber,
+    date,
+    addressStreet,
+    addressLine2,
+    addressCity,
+    addressState,
+    addressZip,
+    fiberCode,
+    fiberFootage,
+    boreFootage,
+    locate,
+    directionalBore,
+    prebury,
+    techNotes,
+  } = job;
+  return {
+    id,
+    jobNumber,
+    date,
+    addressStreet,
+    addressLine2,
+    addressCity,
+    addressState,
+    addressZip,
+    fiberCode,
+    fiberFootage,
+    boreFootage,
+    locate,
+    directionalBore,
+    prebury,
+    techNotes,
+  };
 }
 
 /**

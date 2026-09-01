@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { auth } from "../../../../auth";
 import { listJobs, type JobListRow } from "@/db/queries/jobs";
+import { formatAddress } from "@/lib/domain/format-address";
 
 // Plain JSON... well, plain CSV Route Handler — per docs/architecture.md's
 // already-specified contract (`GET /api/export?scope=all|flagged`) and
@@ -47,7 +48,6 @@ const CSV_HEADERS = [
   "Market",
   "Technician",
   "Address",
-  "Job Site",
   "Fiber Code",
   "Fiber Footage",
   "Bore Footage",
@@ -70,8 +70,7 @@ function rowToFields({ job, marketName, technicianEmail }: JobListRow): string[]
     job.date.toISOString().slice(0, 10),
     marketName,
     technicianEmail,
-    job.address,
-    `${job.jobSiteState} ${job.jobSiteZip}`,
+    formatAddress(job),
     job.fiberCode,
     String(job.fiberFootage),
     String(job.boreFootage),

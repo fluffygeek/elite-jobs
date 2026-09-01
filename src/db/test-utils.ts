@@ -21,6 +21,8 @@ const MIGRATION_FILES = [
   "0000_oval_bloodaxe.sql",
   "0001_brave_molly_hayes.sql",
   "0002_remarkable_leper_queen.sql",
+  "0003_smiling_frank_castle.sql",
+  "0004_sleepy_hiroim.sql",
 ];
 
 export async function createTestDb(): Promise<TestDb> {

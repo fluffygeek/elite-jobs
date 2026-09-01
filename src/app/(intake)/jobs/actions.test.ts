@@ -32,14 +32,15 @@ function officeStaffSession(userId: string) {
 }
 
 describe("submitJob Server Action", () => {
-  let marketId: string;
   let technicianId: string;
 
   beforeEach(async () => {
     authMock.mockReset();
 
-    const [market] = await db.insert(markets).values({ name: "Live Oak" }).returning();
-    marketId = market.id;
+    // Market is derived server-side from addressState (FL/GA only, see
+    // issue #33) rather than submitted — so the Markets it can resolve into
+    // must actually exist.
+    await db.insert(markets).values([{ name: "Florida" }, { name: "Georgia" }]);
 
     const [technician] = await db
       .insert(users)
@@ -51,10 +52,12 @@ describe("submitJob Server Action", () => {
   function validInput(overrides: Partial<SubmitJobInput> = {}): SubmitJobInput {
     return {
       id: randomUUID(),
-      marketId,
       jobNumber: `J-${randomUUID()}`,
       date: new Date("2026-01-15T00:00:00Z"),
-      address: "104 E Welwood Dr, Savannah, GA 31419, USA",
+      addressStreet: "104 E Welwood Dr",
+      addressCity: "Savannah",
+      addressState: "GA",
+      addressZip: "31419",
       fiberCode: "CP",
       fiberFootage: 200,
       boreFootage: 300,
@@ -106,10 +109,10 @@ describe("submitJob Server Action", () => {
     }
   });
 
-  it("returns a typed validation error for an unparsable address", async () => {
+  it("returns a typed validation error for a state outside FL/GA", async () => {
     authMock.mockResolvedValue(technicianSession(technicianId));
 
-    const result = await submitJob(validInput({ address: "not a real address" }));
+    const result = await submitJob(validInput({ addressState: "NY" }));
 
     expect(result.ok).toBe(false);
     if (!result.ok) {

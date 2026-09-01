@@ -1,8 +1,7 @@
 "use server";
 
 import { auth } from "../../../../auth";
-import { createJob, DuplicateJobNumberError } from "@/db/queries/jobs";
-import { UnparsableAddressError } from "@/lib/domain/job-site";
+import { createJob, DuplicateJobNumberError, UnsupportedMarketError } from "@/db/queries/jobs";
 import { NotAuthorizedError } from "./errors";
 import { submitJobSchema, type SubmitJobInput } from "./schema";
 
@@ -46,7 +45,7 @@ export async function submitJob(input: SubmitJobInput): Promise<SubmitJobResult>
     if (error instanceof DuplicateJobNumberError) {
       return { ok: false, error: "duplicate_job_number", message: error.message };
     }
-    if (error instanceof UnparsableAddressError) {
+    if (error instanceof UnsupportedMarketError) {
       return { ok: false, error: "validation", message: error.message };
     }
     throw error;

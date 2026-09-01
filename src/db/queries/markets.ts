@@ -23,6 +23,15 @@ export async function listActiveMarkets(db: DbClient = defaultDb) {
   return db.select().from(markets).where(eq(markets.active, true)).orderBy(markets.name);
 }
 
+// Looks up a Market by its exact name — used by src/db/queries/jobs.ts's
+// createJob to resolve the Market a Job belongs to from the name
+// src/lib/domain/market-from-state.ts derives from the submitted State.
+// Returns undefined when no Market with that name exists.
+export async function getMarketByName(name: string, db: DbClient = defaultDb) {
+  const [market] = await db.select().from(markets).where(eq(markets.name, name));
+  return market;
+}
+
 export async function createMarket(name: string, db: DbClient = defaultDb) {
   const [market] = await db.insert(markets).values({ name }).returning();
   return market;

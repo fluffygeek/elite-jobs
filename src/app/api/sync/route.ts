@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import { auth } from "../../../../auth";
-import { ConflictingSyncError, DuplicateJobNumberError, syncJob } from "@/db/queries/jobs";
-import { UnparsableAddressError } from "@/lib/domain/job-site";
+import {
+  ConflictingSyncError,
+  DuplicateJobNumberError,
+  UnsupportedMarketError,
+  syncJob,
+} from "@/db/queries/jobs";
 import { submitJobSchema } from "../../(intake)/jobs/schema";
 
 // Plain JSON Route Handler, not a Server Action — the offline sync path is
@@ -69,7 +73,7 @@ export async function POST(request: Request) {
         { status: 409 },
       );
     }
-    if (error instanceof UnparsableAddressError) {
+    if (error instanceof UnsupportedMarketError) {
       return NextResponse.json(
         { ok: false, error: "validation", message: error.message },
         { status: 400 },

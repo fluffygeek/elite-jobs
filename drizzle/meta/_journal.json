@@ -22,6 +22,20 @@
       "when": 1788056997444,
       "tag": "0002_remarkable_leper_queen",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1788228066425,
+      "tag": "0003_smiling_frank_castle",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1788228075277,
+      "tag": "0004_sleepy_hiroim",
+      "breakpoints": true
     }
   ]
 }

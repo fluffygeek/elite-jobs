@@ -5,7 +5,7 @@ Tracks fiber and directional-bore installation jobs submitted by field technicia
 ## Language
 
 **Market**:
-A fixed, admin-managed geographic region of operation (e.g. "Live Oak", "Florida", "Georgia") that every Job belongs to.
+A fixed, admin-managed geographic region of operation that every Job belongs to. A Job's Market is derived automatically from its Address's State — Florida and Georgia are the only States currently mapped to a Market, so those are the only two a Job submission can ever land in; a State outside that pair is rejected. Not selected by the Technician.
 _Avoid_: Region, territory
 
 **Technician**:
@@ -17,16 +17,12 @@ The back-office role that reviews submitted Jobs and marks them closed out. Offi
 _Avoid_: Dispatch, dispatcher, admin
 
 **Job**:
-A single unit of installation work at one Address, submitted by a Technician and belonging to one Market. A Job carries fiber and/or bore work details, a small set of fixed boolean site attributes, and a Close-Out status that only Office Staff can change.
+A single unit of installation work at one Address, submitted by a Technician and belonging to one Market. An Address is a structured set of fields — Street, Address Line 2 (optional), City, State, and Zip (optional) — not a single free-text field. A Job carries fiber and/or bore work details, a small set of fixed boolean site attributes, and a Close-Out status that only Office Staff can change.
 _Avoid_: Ticket, work order, task
 
 **Job Number**:
 A free-text identifier the Technician enters on a Job. Not validated or issued by any external system — uniqueness is not enforced across Markets.
 _Avoid_: Ticket number, work order number
-
-**Job Site**:
-The state and zip code covered by a Job, derived automatically from its Address. Not entered independently.
-_Avoid_: Location, service area
 
 **Fiber Code**:
 A Technician-selected classification of the fiber work performed on a Job, drawn from a fixed list: `CP`, `DDB`.

@@ -44,14 +44,15 @@ function parseCsv(text: string): string[][] {
 }
 
 describe("GET /api/export", () => {
-  let marketId: string;
   let technicianId: string;
 
   beforeEach(async () => {
     authMock.mockReset();
 
-    const [market] = await db.insert(markets).values({ name: "Live Oak" }).returning();
-    marketId = market.id;
+    // Market is derived server-side from addressState (FL/GA only, see
+    // issue #33) rather than submitted — so the Markets it can resolve into
+    // must actually exist.
+    await db.insert(markets).values([{ name: "Florida" }, { name: "Georgia" }]);
 
     const [technician] = await db
       .insert(users)
@@ -64,11 +65,13 @@ describe("GET /api/export", () => {
     return createJob(
       {
         id: randomUUID(),
-        marketId,
         technicianId,
         jobNumber: `J-${randomUUID()}`,
         date: new Date("2026-01-15T00:00:00Z"),
-        address: "104 E Welwood Dr, Savannah, GA 31419, USA",
+        addressStreet: "104 E Welwood Dr",
+        addressCity: "Savannah",
+        addressState: "GA",
+        addressZip: "31419",
         fiberCode: "CP",
         fiberFootage: 200,
         boreFootage: 100,
@@ -136,7 +139,6 @@ describe("GET /api/export", () => {
       "Market",
       "Technician",
       "Address",
-      "Job Site",
       "Fiber Code",
       "Fiber Footage",
       "Bore Footage",
@@ -150,6 +152,27 @@ describe("GET /api/export", () => {
     ]);
     const jobNumbers = rows.slice(1).map((row) => row[0]);
     expect(jobNumbers.sort()).toEqual(["J-ALL-1", "J-ALL-2"]);
+  });
+
+  it("composes the structured address fields into one readable Address column", async () => {
+    authMock.mockResolvedValue(officeStaffSession());
+    await seedJob({
+      jobNumber: "J-ADDR",
+      addressStreet: "123 Main St",
+      addressLine2: "Apt 4",
+      addressCity: "Savannah",
+      addressState: "GA",
+      addressZip: "31401",
+    });
+
+    const response = await GET(getRequest("?scope=all"));
+    const text = await response.text();
+
+    // The composed address contains commas, so RFC 4180 escaping quotes the
+    // whole field — parseCsv's naive comma-split can't reconstruct that, so
+    // this checks the raw CSV text instead (same approach the existing
+    // comma/quote-escaping tests below use).
+    expect(text).toContain('"123 Main St, Apt 4, Savannah, GA 31401"');
   });
 
   it("returns only flagged Jobs for scope=flagged, excluding non-flagged Jobs", async () => {

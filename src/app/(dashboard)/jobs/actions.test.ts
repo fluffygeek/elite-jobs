@@ -34,14 +34,15 @@ function technicianSession() {
 }
 
 describe("jobs Server Actions", () => {
-  let marketId: string;
   let technicianId: string;
 
   beforeEach(async () => {
     authMock.mockReset();
 
-    const [market] = await testDb.insert(markets).values({ name: "Live Oak" }).returning();
-    marketId = market.id;
+    // Market is derived server-side from addressState (FL/GA only, see
+    // issue #33) rather than submitted — so the Markets it can resolve into
+    // must actually exist.
+    await testDb.insert(markets).values([{ name: "Florida" }, { name: "Georgia" }]);
 
     const [technician] = await testDb
       .insert(users)
@@ -54,11 +55,19 @@ describe("jobs Server Actions", () => {
     return createJob(
       {
         id: randomUUID(),
-        marketId,
         technicianId,
-        jobNumber: "J-100",
+        // Unique per call — the mocked "@/db" module (and its underlying
+        // PGlite instance) is shared across every test in this file, and
+        // Market is now derived from addressState rather than accepted as
+        // input, so every seedJob() call in this suite resolves to the same
+        // Georgia Market row. A fixed job number would collide with the
+        // real (market_id, job_number) uniqueness constraint across tests.
+        jobNumber: `J-${randomUUID()}`,
         date: new Date("2026-01-15T00:00:00Z"),
-        address: "104 E Welwood Dr, Savannah, GA 31419, USA",
+        addressStreet: "104 E Welwood Dr",
+        addressCity: "Savannah",
+        addressState: "GA",
+        addressZip: "31419",
         fiberCode: "CP",
         fiberFootage: 200,
         boreFootage: 100,
@@ -117,9 +126,9 @@ describe("jobs Server Actions", () => {
 
     const addressResult = await updateJobFieldAction(
       job.id,
-      "address",
-      "104 E Welwood Dr, Savannah, GA 31419, USA",
-      "200 Peachtree St, Atlanta, GA 30303, USA",
+      "addressStreet",
+      "104 E Welwood Dr",
+      "200 Peachtree St",
     );
     const notesResult = await updateJobFieldAction(
       job.id,
