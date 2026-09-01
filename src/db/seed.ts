@@ -8,12 +8,7 @@ import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { db } from "./index";
 import { markets, users } from "./schema";
-import {
-  createJob,
-  updateJobDiscrepancyFlag,
-  updateJobClosedOut,
-  DuplicateJobNumberError,
-} from "./queries/jobs";
+import { acquireJobLock, createJob, DuplicateJobNumberError, updateJob } from "./queries/jobs";
 
 // Seeds demo data for local exploration/QA: a couple of Markets, a test
 // Technician + Office Staff account, and a handful of Jobs spanning the
@@ -71,8 +66,11 @@ interface DemoJob {
 
 // Market is no longer passed in — createJob derives it internally from
 // addressState (see src/db/queries/jobs.ts and issue #33), same as every
-// other caller.
-async function ensureJob(spec: DemoJob) {
+// other caller. Discrepancy Flag/Close-Out are no longer their own CAS
+// updaters (issue #34) — setting either now goes through the same
+// acquire-lock -> updateJob -> lock released flow the dashboard's detail
+// view uses, with the demo Office Staff account as the lock holder.
+async function ensureJob(spec: DemoJob, officeStaffId: string) {
   try {
     const job = await createJob({
       id: randomUUID(),
@@ -93,11 +91,28 @@ async function ensureJob(spec: DemoJob) {
       techNotes: spec.techNotes,
     });
 
-    if (spec.flagged) {
-      await updateJobDiscrepancyFlag(job.id, false, true);
-    }
-    if (spec.closedOut) {
-      await updateJobClosedOut(job.id, false, true);
+    if (spec.flagged || spec.closedOut) {
+      await acquireJobLock(job.id, officeStaffId);
+      await updateJob(
+        job.id,
+        {
+          addressStreet: job.addressStreet,
+          addressLine2: job.addressLine2,
+          addressCity: job.addressCity,
+          addressState: job.addressState,
+          addressZip: job.addressZip,
+          fiberCode: job.fiberCode,
+          fiberFootage: job.fiberFootage,
+          boreFootage: job.boreFootage,
+          locate: job.locate,
+          directionalBore: job.directionalBore,
+          prebury: job.prebury,
+          techNotes: job.techNotes,
+          discrepancyFlag: spec.flagged ?? false,
+          closedOut: spec.closedOut ?? false,
+        },
+        officeStaffId,
+      );
     }
     console.log(`  created ${spec.jobNumber}`);
   } catch (error) {
@@ -128,7 +143,6 @@ async function main() {
   const officeStaffId = await ensureUser("demo.staff@elitetmg.com", "office_staff");
   console.log(`technician ready: demo.tech@elitetmg.com / ${DEMO_PASSWORD}`);
   console.log(`office staff ready: demo.staff@elitetmg.com / ${DEMO_PASSWORD}`);
-  void officeStaffId; // no Job field references the office staff account directly
 
   // Market is derived from addressState alone (Florida/Georgia only — see
   // issue #33), not passed in here.
@@ -216,7 +230,7 @@ async function main() {
 
   console.log("seeding jobs:");
   for (const job of jobs) {
-    await ensureJob(job);
+    await ensureJob(job, officeStaffId);
   }
 
   console.log("done.");

@@ -7,8 +7,9 @@ Office Staff need a single source of truth for fiber/bore installation jobs subm
 ## Approaches considered
 
 **Concurrency safety** (the crux of the whole PRD hypothesis):
-- **Field-level targeted updates + narrow optimistic locking (chosen)** — the API only ever accepts targeted mutations to specific fields/field-groups (e.g. "set discrepancy flag", "update tech notes"), so edits to different fields on the same Job never conflict at all. A same-field concurrent edit is caught with a lightweight per-field-group version/timestamp check and rejected with "this changed, reload" rather than silently discarded.
-- Row-level optimistic locking (single `version` column, any save requires it) — rejected: still produces false-positive conflicts when two staff edit unrelated fields on the same Job simultaneously, which is the exact frustration this project exists to remove.
+- **Pessimistic whole-Job locking (current — see ADR 0002)** — Office Staff acquire an exclusive lock on the entire Job record by opening it in the detail/edit view, make every change (including Discrepancy Flag and Close-Out) in one combined save, and release the lock on save or cancel; the lock auto-expires after 15 minutes of inactivity, checked lazily at acquire time rather than via a background job. Chosen over the original field-level CAS design below because it matches staff's actual mental model — one person edits a Job at a time — better than "edit whatever you want, find out about conflicts after the fact" does. See docs/adr/0002-pessimistic-locking-for-job-edits.md for the full reversal rationale.
+- Field-level targeted updates + narrow optimistic locking (original MVP design, replaced by the above per ADR 0002) — the API only accepted targeted mutations to specific fields/field-groups (e.g. "set discrepancy flag", "update tech notes"), so edits to different fields on the same Job never conflicted at all. A same-field concurrent edit was caught with a per-field-group compare-and-swap check and rejected with "this changed, reload" rather than silently discarded. Worked correctly, but asked staff to reason about a finer-grained conflict model than the workflow actually needed.
+- Row-level optimistic locking (single `version` column, any save requires it) — rejected: still produces false-positive conflicts when two staff edit unrelated fields on the same Job simultaneously.
 - Real-time collaborative editing (CRDT/OT) — rejected: solves it perfectly but is disproportionate infrastructure for structured form fields edited by a handful of office staff.
 
 **Offline job intake**: already committed via ADR 0001 (offline-first, client-generated Job IDs). This doc decides *how*, not *whether*.
@@ -18,7 +19,7 @@ Office Staff need a single source of truth for fiber/bore installation jobs subm
 A Next.js (App Router) application deployed on Vercel, backed by Postgres, with two distinct surfaces:
 
 1. **Technician intake** — a PWA (installable, no app-store/IT step) that stores Job drafts locally via IndexedDB (Dexie.js) the instant they're created, tagged with a client-generated ID, and syncs them to the server opportunistically whenever the app is online (on load, on reconnect, and periodically while foregrounded) — not relying on the Background Sync API, which iOS Safari doesn't support. The server treats the client-generated ID as the Job's identity, so a retried sync after a dropped connection upserts rather than duplicates.
-2. **Office Staff dashboard** — reviews Jobs across all markets, edits fields individually via targeted mutations (never a full-record overwrite), sets the Discrepancy Flag, closes jobs out, and exports CSVs (general and flagged-only) generated on demand.
+2. **Office Staff dashboard** — reviews Jobs across all markets, edits a Job (including the Discrepancy Flag and Close-Out) via a pessimistic whole-Job lock (see ADR 0002), and exports CSVs (general and flagged-only) generated on demand.
 
 Both surfaces sit on the same Postgres database and domain logic (bore-payment-tier computation, duplicate detection) so the computation rule and validation live in one place regardless of which surface triggered a write.
 

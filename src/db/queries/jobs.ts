@@ -1,5 +1,6 @@
-import { and, eq, isNull } from "drizzle-orm";
-import type { AnyPgColumn, PgDatabase } from "drizzle-orm/pg-core";
+import { and, eq, isNull, lt, or, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
+import type { PgDatabase } from "drizzle-orm/pg-core";
 import { db as defaultDb } from "@/db";
 import { jobs, markets, users, type FiberCode } from "@/db/schema";
 import { computeBoreCode } from "@/lib/domain/bore-payment-tier";
@@ -195,47 +196,6 @@ export async function syncJob(
   return { job, created: true };
 }
 
-// Office Staff dashboard reads Jobs across every Market in one list (issue
-// #7's core view). Joins in Market name and Technician email for display —
-// there's nowhere else the dashboard can get either without a second
-// round-trip per row.
-export interface JobListRow {
-  job: Job;
-  marketName: string;
-  technicianEmail: string;
-}
-
-export async function listJobs(db: Db = defaultDb): Promise<JobListRow[]> {
-  return db
-    .select({
-      job: jobs,
-      marketName: markets.name,
-      technicianEmail: users.email,
-    })
-    .from(jobs)
-    .innerJoin(markets, eq(jobs.marketId, markets.id))
-    .innerJoin(users, eq(jobs.technicianId, users.id))
-    .orderBy(jobs.date);
-}
-
-// --- Per-field compare-and-swap updates -----------------------------------
-//
-// This is the mechanism AGENTS.md's ground rules and issue #1's spec both
-// point to as the crux of the whole project: every Job field is its own
-// "field group of one". A save never touches the whole row — it's a
-// conditional `UPDATE jobs SET <field> = :new WHERE id = :id AND <field> =
-// :expectedOld`, checked via the affected-row count, not an
-// application-level "read current value, compare in JS, then write" (which
-// has a race condition between the read and the write). Two edits to
-// *different* fields on the same Job never contend with each other at all,
-// since each CAS only ever guards its own column in the WHERE clause.
-//
-// Zero rows affected is ambiguous on its own — it means either "the job
-// doesn't exist" or "someone else already changed this exact field" — so we
-// distinguish the two with a follow-up existence check and throw a specific
-// error for each, per AGENTS.md's "explicit errors, no silent failures"
-// principle.
-
 export class JobNotFoundError extends Error {
   constructor(id: string) {
     super(`Job not found: ${id}`);
@@ -243,305 +203,243 @@ export class JobNotFoundError extends Error {
   }
 }
 
-export class FieldConflictError extends Error {
-  constructor(public readonly field: string) {
-    super(`This ${field} was just changed by someone else — reload to see the latest value.`);
-    this.name = "FieldConflictError";
+export async function getJobById(id: string, db: Db = defaultDb): Promise<Job | null> {
+  const [job] = await db.select().from(jobs).where(eq(jobs.id, id)).limit(1);
+  return job ?? null;
+}
+
+// Office Staff dashboard reads Jobs across every Market in one list (issue
+// #7's core view). Joins in Market name, Technician email, and (issue #34)
+// the current lock holder's email for display — there's nowhere else the
+// dashboard can get any of those without a second round-trip per row.
+export interface JobListRow {
+  job: Job;
+  marketName: string;
+  technicianEmail: string;
+  // Null when the Job is unlocked, or when a previous lock has gone stale
+  // (see isLockActive below) — the list treats a stale lock exactly like no
+  // lock at all, so staff aren't told a Job is locked by someone who
+  // effectively no longer holds it.
+  lockHolderEmail: string | null;
+}
+
+export async function listJobs(db: Db = defaultDb): Promise<JobListRow[]> {
+  const lockHolders = alias(users, "lock_holders");
+
+  const rows = await db
+    .select({
+      job: jobs,
+      marketName: markets.name,
+      technicianEmail: users.email,
+      lockHolderEmail: lockHolders.email,
+    })
+    .from(jobs)
+    .innerJoin(markets, eq(jobs.marketId, markets.id))
+    .innerJoin(users, eq(jobs.technicianId, users.id))
+    .leftJoin(lockHolders, eq(jobs.lockedByUserId, lockHolders.id))
+    .orderBy(jobs.date);
+
+  return rows.map((row) => ({
+    ...row,
+    lockHolderEmail: isLockActive(row.job) ? row.lockHolderEmail : null,
+  }));
+}
+
+// --- Pessimistic whole-Job locking -----------------------------------------
+//
+// Replaces the old per-field compare-and-swap mechanism (issue #34, reversing
+// issue #1/#7/#8/#24/#25's approach — see
+// docs/adr/0002-pessimistic-locking-for-job-edits.md). Office Staff now edit
+// a Job by acquiring an exclusive lock on the *whole record* (opening the
+// detail view), making every change in one save, and releasing the lock —
+// rather than each field independently guarding its own compare-and-swap.
+//
+// A lock is `lockedByUserId` + `lockedAt`, both null when unlocked. It
+// auto-expires after 15 minutes of inactivity — checked lazily at
+// acquire-time (`locked_at < now() - 15 minutes` counts as unlocked), no
+// background cron needed.
+
+const LOCK_TTL_MS = 15 * 60 * 1000;
+
+function isLockActive(job: Pick<Job, "lockedAt">): boolean {
+  return job.lockedAt !== null && Date.now() - job.lockedAt.getTime() < LOCK_TTL_MS;
+}
+
+// True only when `userId` holds a currently-active lock on `job` — used by
+// the detail page (src/app/(dashboard)/jobs/[id]/page.tsx) to re-verify on
+// load that the session that acquired the lock still actually holds it
+// (their own lock could have expired between acquiring and loading, or under
+// a race), and by updateJob below for the same check server-side.
+export function isLockHeldBy(job: Pick<Job, "lockedByUserId" | "lockedAt">, userId: string): boolean {
+  return job.lockedByUserId === userId && isLockActive(job);
+}
+
+// Thrown by acquireJobLock when the conditional update affects zero rows and
+// the Job still exists — i.e. someone else holds a currently-active lock.
+// Carries the holder's email so the UI can name them (issue #34's "sees who
+// holds it" acceptance criterion).
+export class JobLockedError extends Error {
+  constructor(public readonly holderEmail: string) {
+    super(`This Job is currently locked by ${holderEmail}.`);
+    this.name = "JobLockedError";
   }
 }
 
-// Internal only: the public surface is the typed per-field functions below,
-// each of which knows its own column and (where relevant) which derived
-// columns must be recomputed alongside it. Column/value typing is loosened
-// here (Drizzle's column generics don't unify cleanly across heterogeneous
-// callers) — every exported caller below is fully typed, so this stays an
-// implementation detail, not a hole in the public API.
-async function casUpdateJobField(
-  id: string,
-  fieldLabel: string,
-  column: AnyPgColumn,
-  expectedOldValue: unknown,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  setValues: Record<string, any>,
-  db: Db,
-): Promise<Job> {
-  // A plain `eq(column, null)` compiles to `column = NULL`, which is never
-  // true in SQL even when the column genuinely is NULL — so a nullable
-  // field (addressLine2, addressZip) whose expected old value is `null`
-  // needs `IS NULL` instead, or its compare-and-swap would spuriously
-  // report a conflict on every attempt to match a currently-null value.
-  const matchesExpectedOldValue =
-    expectedOldValue === null ? isNull(column) : eq(column, expectedOldValue);
-
+/**
+ * Attempts to acquire the whole-Job lock for `userId`. An atomic conditional
+ * `UPDATE ... WHERE id = ? AND (unlocked OR stale OR already held by ?)`,
+ * checked via affected-row count — the same compare-and-swap *pattern* the
+ * old per-field code used for fields, just applied to the lock itself, since
+ * acquiring a lock has exactly the same "two people race for it" problem a
+ * field update did. Re-acquiring your own still-active lock succeeds and
+ * refreshes `lockedAt` (idempotent re-entry, e.g. a reloaded detail page).
+ *
+ * Zero rows affected is ambiguous on its own (job doesn't exist vs. someone
+ * else holds a valid lock) — resolved with a follow-up read, same as the old
+ * FieldConflictError/JobNotFoundError disambiguation.
+ */
+export async function acquireJobLock(jobId: string, userId: string, db: Db = defaultDb): Promise<Job> {
   const [updated] = await db
     .update(jobs)
-    .set(setValues)
-    .where(and(eq(jobs.id, id), matchesExpectedOldValue))
+    .set({ lockedByUserId: userId, lockedAt: new Date() })
+    .where(
+      and(
+        eq(jobs.id, jobId),
+        or(
+          isNull(jobs.lockedByUserId),
+          lt(jobs.lockedAt, sql`now() - interval '15 minutes'`),
+          eq(jobs.lockedByUserId, userId),
+        ),
+      ),
+    )
     .returning();
 
   if (updated) {
     return updated;
   }
 
-  const [existing] = await db.select().from(jobs).where(eq(jobs.id, id)).limit(1);
+  const [existing] = await db
+    .select({ job: jobs, holderEmail: users.email })
+    .from(jobs)
+    .leftJoin(users, eq(jobs.lockedByUserId, users.id))
+    .where(eq(jobs.id, jobId))
+    .limit(1);
+
   if (!existing) {
-    throw new JobNotFoundError(id);
+    throw new JobNotFoundError(jobId);
   }
-  throw new FieldConflictError(fieldLabel);
-}
-
-// Updates a Job's structured address fields via compare-and-swap. Each field
-// is its own field-group of one, same as every other CAS updater below —
-// there's no re-derivation to keep in sync here (unlike the old single
-// Address + Job Site pair), since Market is only ever resolved once, at
-// creation time, and editing an address field afterward doesn't move a Job
-// between Markets (see src/db/queries/jobs.ts's createJob and issue #33's
-// spec — moving Markets on a correction is explicitly not this ticket's
-// concern). `addressLine2`/`addressZip` are nullable columns; the empty
-// string a plain-text dashboard form submits for "no value" is normalized to
-// `null` on write and back to `""` for CAS comparison, so callers never have
-// to reason about the null/empty-string distinction themselves.
-function normalizeNullableAddressPart(value: string): string | null {
-  return value === "" ? null : value;
-}
-
-export async function updateJobAddressStreet(
-  id: string,
-  expectedOldStreet: string,
-  newStreet: string,
-  db: Db = defaultDb,
-): Promise<Job> {
-  return casUpdateJobField(
-    id,
-    "Address Street",
-    jobs.addressStreet,
-    expectedOldStreet,
-    { addressStreet: newStreet, updatedAt: new Date() },
-    db,
-  );
-}
-
-export async function updateJobAddressLine2(
-  id: string,
-  expectedOldLine2: string,
-  newLine2: string,
-  db: Db = defaultDb,
-): Promise<Job> {
-  return casUpdateJobField(
-    id,
-    "Address Line 2",
-    jobs.addressLine2,
-    normalizeNullableAddressPart(expectedOldLine2),
-    { addressLine2: normalizeNullableAddressPart(newLine2), updatedAt: new Date() },
-    db,
-  );
-}
-
-export async function updateJobAddressCity(
-  id: string,
-  expectedOldCity: string,
-  newCity: string,
-  db: Db = defaultDb,
-): Promise<Job> {
-  return casUpdateJobField(
-    id,
-    "Address City",
-    jobs.addressCity,
-    expectedOldCity,
-    { addressCity: newCity, updatedAt: new Date() },
-    db,
-  );
-}
-
-export async function updateJobAddressState(
-  id: string,
-  expectedOldState: string,
-  newState: string,
-  db: Db = defaultDb,
-): Promise<Job> {
-  return casUpdateJobField(
-    id,
-    "Address State",
-    jobs.addressState,
-    expectedOldState,
-    { addressState: newState, updatedAt: new Date() },
-    db,
-  );
-}
-
-export async function updateJobAddressZip(
-  id: string,
-  expectedOldZip: string,
-  newZip: string,
-  db: Db = defaultDb,
-): Promise<Job> {
-  return casUpdateJobField(
-    id,
-    "Address Zip",
-    jobs.addressZip,
-    normalizeNullableAddressPart(expectedOldZip),
-    { addressZip: normalizeNullableAddressPart(newZip), updatedAt: new Date() },
-    db,
-  );
-}
-
-export async function updateJobFiberCode(
-  id: string,
-  expectedOldFiberCode: FiberCode,
-  newFiberCode: FiberCode,
-  db: Db = defaultDb,
-): Promise<Job> {
-  return casUpdateJobField(
-    id,
-    "Fiber Code",
-    jobs.fiberCode,
-    expectedOldFiberCode,
-    { fiberCode: newFiberCode, updatedAt: new Date() },
-    db,
-  );
-}
-
-export async function updateJobFiberFootage(
-  id: string,
-  expectedOldFiberFootage: number,
-  newFiberFootage: number,
-  db: Db = defaultDb,
-): Promise<Job> {
-  return casUpdateJobField(
-    id,
-    "Fiber Footage",
-    jobs.fiberFootage,
-    expectedOldFiberFootage,
-    { fiberFootage: newFiberFootage, updatedAt: new Date() },
-    db,
-  );
+  throw new JobLockedError(existing.holderEmail ?? "another Office Staff member");
 }
 
 /**
- * Updates a Job's Bore Footage via compare-and-swap. Bore Code is recomputed
- * from the new footage and persisted alongside it, per AGENTS.md's "Bore
- * Code is computed, never client-trusted" ground rule.
+ * Releases the whole-Job lock, but only if `userId` currently holds it — a
+ * conditional update, not a plain clear, so a request to release someone
+ * else's lock (a stale client, a race) silently no-ops rather than stealing
+ * or destroying it. Called on both explicit Cancel and after a successful
+ * Save (see src/app/(dashboard)/jobs/[id]/actions.ts).
  */
-export async function updateJobBoreFootage(
-  id: string,
-  expectedOldBoreFootage: number,
-  newBoreFootage: number,
-  db: Db = defaultDb,
-): Promise<Job> {
-  const boreCode = computeBoreCode(newBoreFootage);
-  return casUpdateJobField(
-    id,
-    "Bore Footage",
-    jobs.boreFootage,
-    expectedOldBoreFootage,
-    { boreFootage: newBoreFootage, boreCode, updatedAt: new Date() },
-    db,
-  );
+export async function releaseJobLock(jobId: string, userId: string, db: Db = defaultDb): Promise<void> {
+  await db
+    .update(jobs)
+    .set({ lockedByUserId: null, lockedAt: null })
+    .where(and(eq(jobs.id, jobId), eq(jobs.lockedByUserId, userId)));
 }
 
-export async function updateJobLocate(
-  id: string,
-  expectedOldLocate: boolean,
-  newLocate: boolean,
-  db: Db = defaultDb,
-): Promise<Job> {
-  return casUpdateJobField(
-    id,
-    "Locate",
-    jobs.locate,
-    expectedOldLocate,
-    { locate: newLocate, updatedAt: new Date() },
-    db,
-  );
+// Thrown by updateJob when `holderUserId` doesn't currently hold an active
+// lock on the Job — either it was never acquired, someone else holds it, or
+// it expired between acquiring and saving.
+export class LockNotHeldError extends Error {
+  constructor(id: string) {
+    super(`You no longer hold the lock for Job ${id} — it may have expired.`);
+    this.name = "LockNotHeldError";
+  }
 }
 
-export async function updateJobDirectionalBore(
-  id: string,
-  expectedOldDirectionalBore: boolean,
-  newDirectionalBore: boolean,
-  db: Db = defaultDb,
-): Promise<Job> {
-  return casUpdateJobField(
-    id,
-    "Directional Bore",
-    jobs.directionalBore,
-    expectedOldDirectionalBore,
-    { directionalBore: newDirectionalBore, updatedAt: new Date() },
-    db,
-  );
-}
-
-export async function updateJobPrebury(
-  id: string,
-  expectedOldPrebury: boolean,
-  newPrebury: boolean,
-  db: Db = defaultDb,
-): Promise<Job> {
-  return casUpdateJobField(
-    id,
-    "Prebury",
-    jobs.prebury,
-    expectedOldPrebury,
-    { prebury: newPrebury, updatedAt: new Date() },
-    db,
-  );
-}
-
-export async function updateJobTechNotes(
-  id: string,
-  expectedOldTechNotes: string,
-  newTechNotes: string,
-  db: Db = defaultDb,
-): Promise<Job> {
-  return casUpdateJobField(
-    id,
-    "Tech Notes",
-    jobs.techNotes,
-    expectedOldTechNotes,
-    { techNotes: newTechNotes, updatedAt: new Date() },
-    db,
-  );
+// The full set of fields Office Staff can correct from the locked detail
+// view — everything the old per-field CAS updaters covered, applied in one
+// combined update. `addressLine2`/`addressZip` are nullable (an empty string
+// from the form means "no value"); `techNotes` is always a string, never
+// undefined.
+export interface JobUpdatePatch {
+  addressStreet: string;
+  addressLine2: string | null;
+  addressCity: string;
+  addressState: string;
+  addressZip: string | null;
+  fiberCode: FiberCode;
+  fiberFootage: number;
+  boreFootage: number;
+  locate: boolean;
+  directionalBore: boolean;
+  prebury: boolean;
+  techNotes: string;
+  discrepancyFlag: boolean;
+  closedOut: boolean;
 }
 
 /**
- * Updates a Job's Discrepancy Flag via compare-and-swap. A toggle, not a
- * one-directional action — per CONTEXT.md's "Discrepancy Flag" entry, Office
- * Staff can both set it and clear it once resolved.
+ * Applies a full edit to a Job in one combined update — the whole-Job
+ * counterpart to the old per-field CAS updaters, gated by the pessimistic
+ * lock rather than a per-field expected-old-value. Verifies `holderUserId`
+ * holds a currently-active lock (throws LockNotHeldError otherwise),
+ * recomputes Bore Code from the submitted Bore Footage (AGENTS.md's "Bore
+ * Code is computed, never client-trusted" ground rule still applies), writes
+ * every field in one `UPDATE`, and releases the lock as part of the same
+ * call — a save always ends with the Job unlocked again.
+ *
+ * The lock check happens twice: once as a friendly read to produce a clear
+ * error, and again as the actual `WHERE lockedByUserId = ?` guard on the
+ * write itself, which is what actually protects against the lock being
+ * released or stolen in the gap between the two (the same "don't trust a
+ * read-then-write without a real DB-level guard" principle the old CAS code
+ * followed).
  */
-export async function updateJobDiscrepancyFlag(
-  id: string,
-  expectedOldDiscrepancyFlag: boolean,
-  newDiscrepancyFlag: boolean,
+export async function updateJob(
+  jobId: string,
+  patch: JobUpdatePatch,
+  holderUserId: string,
   db: Db = defaultDb,
 ): Promise<Job> {
-  return casUpdateJobField(
-    id,
-    "Discrepancy Flag",
-    jobs.discrepancyFlag,
-    expectedOldDiscrepancyFlag,
-    { discrepancyFlag: newDiscrepancyFlag, updatedAt: new Date() },
-    db,
-  );
-}
+  const existing = await getJobById(jobId, db);
+  if (!existing) {
+    throw new JobNotFoundError(jobId);
+  }
+  if (!isLockHeldBy(existing, holderUserId)) {
+    throw new LockNotHeldError(jobId);
+  }
 
-/**
- * Updates a Job's Close-Out status via compare-and-swap. CONTEXT.md's
- * "Close-Out" entry doesn't forbid reverting a Job to awaiting Close-Out, so
- * this is a toggle like every other field-group here, for consistency with
- * Discrepancy Flag rather than an invented one-way restriction.
- */
-export async function updateJobClosedOut(
-  id: string,
-  expectedOldClosedOut: boolean,
-  newClosedOut: boolean,
-  db: Db = defaultDb,
-): Promise<Job> {
-  return casUpdateJobField(
-    id,
-    "Close-Out",
-    jobs.closedOut,
-    expectedOldClosedOut,
-    { closedOut: newClosedOut, updatedAt: new Date() },
-    db,
-  );
+  const boreCode = computeBoreCode(patch.boreFootage);
+
+  const [updated] = await db
+    .update(jobs)
+    .set({
+      addressStreet: patch.addressStreet,
+      addressLine2: patch.addressLine2,
+      addressCity: patch.addressCity,
+      addressState: patch.addressState,
+      addressZip: patch.addressZip,
+      fiberCode: patch.fiberCode,
+      fiberFootage: patch.fiberFootage,
+      boreFootage: patch.boreFootage,
+      boreCode,
+      locate: patch.locate,
+      directionalBore: patch.directionalBore,
+      prebury: patch.prebury,
+      techNotes: patch.techNotes,
+      discrepancyFlag: patch.discrepancyFlag,
+      closedOut: patch.closedOut,
+      updatedAt: new Date(),
+      lockedByUserId: null,
+      lockedAt: null,
+    })
+    .where(and(eq(jobs.id, jobId), eq(jobs.lockedByUserId, holderUserId)))
+    .returning();
+
+  if (!updated) {
+    // The lock was released or stolen between the check above and this
+    // write — a genuine race, not just an unfriendly error message.
+    throw new LockNotHeldError(jobId);
+  }
+
+  return updated;
 }

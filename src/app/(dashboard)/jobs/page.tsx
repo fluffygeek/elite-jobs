@@ -1,89 +1,15 @@
 import { listJobs } from "@/db/queries/jobs";
 import { findDuplicateHintIds } from "@/lib/domain/duplicate-hint";
 import { formatAddress } from "@/lib/domain/format-address";
-import type { EditableJobField } from "./actions";
-import { submitFieldEdit } from "./edit-field";
+import { openJobForEdit } from "./actions";
 
-// Office Staff dashboard: every Job across every Market in one list (issue
-// #7). Plain Server Component + <form action> per editable field, no
-// client-state library — matches src/app/(dashboard)/markets/page.tsx's
-// established pattern. Editing prioritizes the compare-and-swap mechanism
-// being real and conflicts being clearly surfaced over visual polish (see
-// issue #7's brief). Value-parsing and dispatch for field edits live in
-// ./edit-field.ts (issue #24) — this file only renders.
+// Office Staff dashboard: every Job across every Market in one read-only
+// summary list (issue #7), plus a lock-status badge and an "Edit" button
+// (issue #34) — editing itself, including Discrepancy Flag and Close-Out,
+// now happens exclusively in the locked detail view at /jobs/[id]. Plain
+// Server Component + <form action>, no client-state library, matching
+// src/app/(dashboard)/markets/page.tsx's established pattern.
 export const dynamic = "force-dynamic";
-
-function TextFieldForm({
-  jobId,
-  field,
-  value,
-}: {
-  jobId: string;
-  field: EditableJobField;
-  value: string;
-}) {
-  return (
-    <form action={submitFieldEdit.bind(null, jobId, field, value)}>
-      <input type="text" name="newValue" defaultValue={value} />
-      <button type="submit">Save</button>
-    </form>
-  );
-}
-
-function NumberFieldForm({
-  jobId,
-  field,
-  value,
-}: {
-  jobId: string;
-  field: EditableJobField;
-  value: number;
-}) {
-  return (
-    <form action={submitFieldEdit.bind(null, jobId, field, String(value))}>
-      <input type="number" name="newValue" defaultValue={value} />
-      <button type="submit">Save</button>
-    </form>
-  );
-}
-
-function BooleanFieldForm({
-  jobId,
-  field,
-  value,
-}: {
-  jobId: string;
-  field: EditableJobField;
-  value: boolean;
-}) {
-  return (
-    <form action={submitFieldEdit.bind(null, jobId, field, String(value))}>
-      <select name="newValue" defaultValue={String(value)}>
-        <option value="true">Yes</option>
-        <option value="false">No</option>
-      </select>
-      <button type="submit">Save</button>
-    </form>
-  );
-}
-
-function FiberCodeFieldForm({
-  jobId,
-  value,
-}: {
-  jobId: string;
-  value: string;
-}) {
-  return (
-    <form action={submitFieldEdit.bind(null, jobId, "fiberCode", value)}>
-      <select name="newValue" defaultValue={value}>
-        <option value="CP">CP</option>
-        <option value="DDB">DDB</option>
-      </select>
-      <button type="submit">Save</button>
-    </form>
-  );
-}
 
 export default async function JobsPage({
   searchParams,
@@ -100,9 +26,7 @@ export default async function JobsPage({
     <main>
       <h1>Jobs</h1>
 
-      {notice && (
-        <p role={error ? "alert" : "status"}>{notice}</p>
-      )}
+      {notice && <p role={error ? "alert" : "status"}>{notice}</p>}
 
       <p>
         <a href="/api/export?scope=all">Export all</a>
@@ -128,10 +52,12 @@ export default async function JobsPage({
             <th>Tech Notes</th>
             <th>Discrepancy Flag</th>
             <th>Close-Out</th>
+            <th>Lock</th>
+            <th></th>
           </tr>
         </thead>
         <tbody>
-          {rows.map(({ job, marketName, technicianEmail }) => {
+          {rows.map(({ job, marketName, technicianEmail, lockHolderEmail }) => {
             const isPossibleDuplicate = duplicateIds.has(job.id);
             return (
               <tr key={job.id}>
@@ -148,59 +74,28 @@ export default async function JobsPage({
                   )}
                   {job.closedOut && <span aria-label="Closed out">✅ Closed out</span>}
                   <p>{formatAddress(job)}</p>
-                  <TextFieldForm jobId={job.id} field="addressStreet" value={job.addressStreet} />
-                  <TextFieldForm
-                    jobId={job.id}
-                    field="addressLine2"
-                    value={job.addressLine2 ?? ""}
-                  />
-                  <TextFieldForm jobId={job.id} field="addressCity" value={job.addressCity} />
-                  <TextFieldForm jobId={job.id} field="addressState" value={job.addressState} />
-                  <TextFieldForm jobId={job.id} field="addressZip" value={job.addressZip ?? ""} />
                 </td>
-                <td>
-                  <FiberCodeFieldForm jobId={job.id} value={job.fiberCode} />
-                </td>
-                <td>
-                  <NumberFieldForm
-                    jobId={job.id}
-                    field="fiberFootage"
-                    value={job.fiberFootage}
-                  />
-                </td>
-                <td>
-                  <NumberFieldForm
-                    jobId={job.id}
-                    field="boreFootage"
-                    value={job.boreFootage}
-                  />
-                </td>
+                <td>{job.fiberCode}</td>
+                <td>{job.fiberFootage}</td>
+                <td>{job.boreFootage}</td>
                 <td>{job.boreCode}</td>
+                <td>{job.locate ? "Yes" : "No"}</td>
+                <td>{job.directionalBore ? "Yes" : "No"}</td>
+                <td>{job.prebury ? "Yes" : "No"}</td>
+                <td>{job.techNotes}</td>
+                <td>{job.discrepancyFlag ? "Yes" : "No"}</td>
+                <td>{job.closedOut ? "Yes" : "No"}</td>
                 <td>
-                  <BooleanFieldForm jobId={job.id} field="locate" value={job.locate} />
+                  {lockHolderEmail ? (
+                    <span aria-label="Locked">🔒 Locked by {lockHolderEmail}</span>
+                  ) : (
+                    <span aria-label="Unlocked">Unlocked</span>
+                  )}
                 </td>
                 <td>
-                  <BooleanFieldForm
-                    jobId={job.id}
-                    field="directionalBore"
-                    value={job.directionalBore}
-                  />
-                </td>
-                <td>
-                  <BooleanFieldForm jobId={job.id} field="prebury" value={job.prebury} />
-                </td>
-                <td>
-                  <TextFieldForm jobId={job.id} field="techNotes" value={job.techNotes} />
-                </td>
-                <td>
-                  <BooleanFieldForm
-                    jobId={job.id}
-                    field="discrepancyFlag"
-                    value={job.discrepancyFlag}
-                  />
-                </td>
-                <td>
-                  <BooleanFieldForm jobId={job.id} field="closedOut" value={job.closedOut} />
+                  <form action={openJobForEdit.bind(null, job.id)}>
+                    <button type="submit">Edit</button>
+                  </form>
                 </td>
               </tr>
             );

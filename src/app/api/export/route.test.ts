@@ -16,8 +16,9 @@ vi.mock("@/db", async () => {
   return { db };
 });
 
-import { createJob, updateJobDiscrepancyFlag } from "@/db/queries/jobs";
-import { markets, users } from "@/db/schema";
+import { eq } from "drizzle-orm";
+import { createJob } from "@/db/queries/jobs";
+import { jobs, markets, users } from "@/db/schema";
 import { db } from "@/db";
 import { GET } from "./route";
 
@@ -180,9 +181,10 @@ describe("GET /api/export", () => {
     const flagged = await seedJob({ jobNumber: "J-FLAGGED" });
     await seedJob({ jobNumber: "J-NOT-FLAGGED" });
 
-    // Discrepancy Flag isn't settable via createJob's input, so flip it via
-    // the same compare-and-swap update the dashboard uses.
-    await updateJobDiscrepancyFlag(flagged.id, false, true, db);
+    // Discrepancy Flag isn't settable via createJob's input, and this test
+    // is about CSV export shape, not the locking mechanism — write it
+    // directly rather than going through acquireJobLock/updateJob.
+    await db.update(jobs).set({ discrepancyFlag: true }).where(eq(jobs.id, flagged.id));
 
     const response = await GET(getRequest("?scope=flagged"));
     const text = await response.text();

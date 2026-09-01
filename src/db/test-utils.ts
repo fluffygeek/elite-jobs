@@ -23,6 +23,7 @@ const MIGRATION_FILES = [
   "0002_remarkable_leper_queen.sql",
   "0003_smiling_frank_castle.sql",
   "0004_sleepy_hiroim.sql",
+  "0005_blushing_millenium_guard.sql",
 ];
 
 export async function createTestDb(): Promise<TestDb> {

@@ -3,29 +3,26 @@ import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { createTestDb, type TestDb } from "@/db/test-utils";
 import {
+  acquireJobLock,
   createJob,
   DuplicateJobNumberError,
-  FieldConflictError,
+  getJobById,
+  JobLockedError,
   JobNotFoundError,
   listJobs,
+  LockNotHeldError,
+  releaseJobLock,
   UnsupportedMarketError,
-  updateJobAddressCity,
-  updateJobAddressLine2,
-  updateJobAddressState,
-  updateJobAddressStreet,
-  updateJobAddressZip,
-  updateJobBoreFootage,
-  updateJobClosedOut,
-  updateJobDirectionalBore,
-  updateJobDiscrepancyFlag,
-  updateJobFiberFootage,
-  updateJobTechNotes,
+  updateJob,
+  type JobUpdatePatch,
 } from "@/db/queries/jobs";
 import { jobs, markets, users } from "@/db/schema";
 
 describe("createJob persistence", () => {
   let db: TestDb;
   let technicianId: string;
+  let staffAId: string;
+  let staffBId: string;
 
   beforeEach(async () => {
     db = await createTestDb();
@@ -35,6 +32,16 @@ describe("createJob persistence", () => {
       .values({ email: "tech@example.com", role: "technician", passwordHash: "hash" })
       .returning();
     technicianId = technician.id;
+
+    const [staffA, staffB] = await db
+      .insert(users)
+      .values([
+        { email: "staff-a@example.com", role: "office_staff", passwordHash: "hash" },
+        { email: "staff-b@example.com", role: "office_staff", passwordHash: "hash" },
+      ])
+      .returning();
+    staffAId = staffA.id;
+    staffBId = staffB.id;
 
     // createJob no longer accepts marketId — it derives the Market from
     // addressState (Florida/Georgia only, see issue #33) — so the Markets it
@@ -64,6 +71,26 @@ describe("createJob persistence", () => {
     };
   }
 
+  function basePatch(overrides: Partial<JobUpdatePatch> = {}): JobUpdatePatch {
+    return {
+      addressStreet: "104 E Welwood Dr",
+      addressLine2: null,
+      addressCity: "Savannah",
+      addressState: "GA",
+      addressZip: "31419",
+      fiberCode: "CP",
+      fiberFootage: 200,
+      boreFootage: 750,
+      locate: true,
+      directionalBore: true,
+      prebury: false,
+      techNotes: "Updated note",
+      discrepancyFlag: false,
+      closedOut: false,
+      ...overrides,
+    };
+  }
+
   it("persists a Job with the structured address fields and server-derived Market/Bore Code", async () => {
     const job = await createJob(baseInput(), db);
 
@@ -76,6 +103,8 @@ describe("createJob persistence", () => {
     expect(job.technicianId).toBe(technicianId);
     expect(job.jobNumber).toBe("J-100");
     expect(job.techNotes).toBe("Ran into a fence line");
+    expect(job.lockedByUserId).toBeNull();
+    expect(job.lockedAt).toBeNull();
 
     const [market] = await db.select().from(markets).where(eq(markets.id, job.marketId));
     expect(market.name).toBe("Georgia");
@@ -141,7 +170,7 @@ describe("createJob persistence", () => {
   });
 
   describe("listJobs", () => {
-    it("returns every Job across every Market, joined with Market name and Technician email", async () => {
+    it("returns every Job across every Market, joined with Market name, Technician email, and lock status", async () => {
       await createJob(baseInput({ id: randomUUID(), jobNumber: "J-A" }), db);
       await createJob(
         baseInput({
@@ -159,138 +188,179 @@ describe("createJob persistence", () => {
       const marketNames = rows.map((r) => r.marketName).sort();
       expect(marketNames).toEqual(["Florida", "Georgia"]);
       expect(rows.every((r) => r.technicianEmail === "tech@example.com")).toBe(true);
+      expect(rows.every((r) => r.lockHolderEmail === null)).toBe(true);
+    });
+
+    it("shows the holder's email for an actively locked Job, and null once it's released", async () => {
+      const job = await createJob(baseInput(), db);
+      await acquireJobLock(job.id, staffAId, db);
+
+      const lockedRows = await listJobs(db);
+      const lockedRow = lockedRows.find((r) => r.job.id === job.id);
+      expect(lockedRow?.lockHolderEmail).toBe("staff-a@example.com");
+
+      await releaseJobLock(job.id, staffAId, db);
+
+      const unlockedRows = await listJobs(db);
+      const unlockedRow = unlockedRows.find((r) => r.job.id === job.id);
+      expect(unlockedRow?.lockHolderEmail).toBeNull();
     });
   });
 
-  describe("per-field compare-and-swap updates", () => {
-    // This is the money test: two "concurrent" edits to the *same* field
-    // (the second using a now-stale expected-old-value) must have the second
-    // one rejected, never silently overwriting the first.
-    it("rejects a same-field concurrent edit when the expected old value is stale", async () => {
-      const job = await createJob(baseInput({ techNotes: "Original note" }), db);
-
-      // "Staff member A" reads the current value and successfully saves.
-      const afterA = await updateJobTechNotes(job.id, "Original note", "Staff A's note", db);
-      expect(afterA.techNotes).toBe("Staff A's note");
-
-      // "Staff member B" read the value before A's save, so their expected
-      // old value is now stale — must be rejected, not silently applied.
-      await expect(
-        updateJobTechNotes(job.id, "Original note", "Staff B's note", db),
-      ).rejects.toBeInstanceOf(FieldConflictError);
-
-      // And A's write must still stand — never clobbered by the rejected attempt.
-      const [current] = await db.select().from(jobs).where(eq(jobs.id, job.id));
-      expect(current.techNotes).toBe("Staff A's note");
-    });
-
-    it("allows two concurrent edits to two different address fields on the same Job to both succeed", async () => {
-      const job = await createJob(
-        baseInput({ addressStreet: "104 E Welwood Dr", techNotes: "note" }),
-        db,
-      );
-
-      const streetUpdate = await updateJobAddressStreet(
-        job.id,
-        "104 E Welwood Dr",
-        "200 Peachtree St",
-        db,
-      );
-      const notesUpdate = await updateJobTechNotes(job.id, "note", "updated note", db);
-
-      expect(streetUpdate.addressStreet).toBe("200 Peachtree St");
-      expect(notesUpdate.techNotes).toBe("updated note");
-      // Neither write clobbered the other's field.
-      expect(notesUpdate.addressStreet).toBe("200 Peachtree St");
-    });
-
-    it("updates Address City, State, and Zip independently via compare-and-swap", async () => {
+  describe("pessimistic whole-Job locking", () => {
+    it("acquires the lock on an unlocked Job", async () => {
       const job = await createJob(baseInput(), db);
 
-      const afterCity = await updateJobAddressCity(job.id, "Savannah", "Atlanta", db);
-      expect(afterCity.addressCity).toBe("Atlanta");
+      const locked = await acquireJobLock(job.id, staffAId, db);
 
-      const afterState = await updateJobAddressState(job.id, "GA", "GA", db);
-      expect(afterState.addressState).toBe("GA");
-
-      const afterZip = await updateJobAddressZip(job.id, "31419", "30303", db);
-      expect(afterZip.addressZip).toBe("30303");
+      expect(locked.lockedByUserId).toBe(staffAId);
+      expect(locked.lockedAt).not.toBeNull();
     });
 
-    it("round-trips Address Line 2 through compare-and-swap, including clearing it back to null", async () => {
-      const job = await createJob(baseInput({ addressLine2: undefined }), db);
-      expect(job.addressLine2).toBeNull();
+    it("throws JobLockedError naming the holder when someone else already holds an active lock", async () => {
+      const job = await createJob(baseInput(), db);
+      await acquireJobLock(job.id, staffAId, db);
 
-      const withLine2 = await updateJobAddressLine2(job.id, "", "Apt 4", db);
-      expect(withLine2.addressLine2).toBe("Apt 4");
-
-      const cleared = await updateJobAddressLine2(job.id, "Apt 4", "", db);
-      expect(cleared.addressLine2).toBeNull();
-    });
-
-    it("recomputes Bore Code when Bore Footage is updated via compare-and-swap", async () => {
-      const job = await createJob(baseInput({ boreFootage: 100 }), db);
-      expect(job.boreCode).toBe("DDB1");
-
-      const updated = await updateJobBoreFootage(job.id, 100, 600, db);
-
-      expect(updated.boreFootage).toBe(600);
-      expect(updated.boreCode).toBe("DDB4 DBC1 x 150");
-    });
-
-    it("throws FieldConflictError (not JobNotFoundError) when the job exists but the field changed", async () => {
-      const job = await createJob(baseInput({ fiberFootage: 100 }), db);
-      await updateJobFiberFootage(job.id, 100, 150, db);
-
-      await expect(updateJobFiberFootage(job.id, 100, 200, db)).rejects.toBeInstanceOf(
-        FieldConflictError,
+      let caught: unknown;
+      try {
+        await acquireJobLock(job.id, staffBId, db);
+      } catch (error) {
+        caught = error;
+      }
+      expect(caught).toBeInstanceOf(JobLockedError);
+      expect((caught as InstanceType<typeof JobLockedError>).holderEmail).toBe(
+        "staff-a@example.com",
       );
     });
 
-    it("throws JobNotFoundError (not FieldConflictError) when the job id doesn't exist", async () => {
-      await expect(
-        updateJobDirectionalBore(randomUUID(), true, false, db),
-      ).rejects.toBeInstanceOf(JobNotFoundError);
+    it("lets the same user re-acquire (refresh) their own still-active lock", async () => {
+      const job = await createJob(baseInput(), db);
+      const first = await acquireJobLock(job.id, staffAId, db);
+      const second = await acquireJobLock(job.id, staffAId, db);
+
+      expect(second.lockedByUserId).toBe(staffAId);
+      expect(second.lockedAt!.getTime()).toBeGreaterThanOrEqual(first.lockedAt!.getTime());
     });
 
-    it("sets and clears the Discrepancy Flag via compare-and-swap", async () => {
+    it("allows a 15+ minute stale lock to be acquired by someone else", async () => {
       const job = await createJob(baseInput(), db);
-      expect(job.discrepancyFlag).toBe(false);
+      await acquireJobLock(job.id, staffAId, db);
 
-      const flagged = await updateJobDiscrepancyFlag(job.id, false, true, db);
-      expect(flagged.discrepancyFlag).toBe(true);
+      // Simulate the lock having gone stale by backdating lockedAt directly —
+      // acquireJobLock's expiry check is a lazy, DB-time check
+      // (`locked_at < now() - interval '15 minutes'`), so we only need to
+      // move the timestamp back, not wait in real time.
+      const staleTimestamp = new Date(Date.now() - 16 * 60 * 1000);
+      await db.update(jobs).set({ lockedAt: staleTimestamp }).where(eq(jobs.id, job.id));
 
-      const cleared = await updateJobDiscrepancyFlag(job.id, true, false, db);
-      expect(cleared.discrepancyFlag).toBe(false);
+      const reacquired = await acquireJobLock(job.id, staffBId, db);
+      expect(reacquired.lockedByUserId).toBe(staffBId);
     });
 
-    it("rejects a concurrent Discrepancy Flag edit when the expected old value is stale", async () => {
-      const job = await createJob(baseInput(), db);
-      await updateJobDiscrepancyFlag(job.id, false, true, db);
-
-      await expect(
-        updateJobDiscrepancyFlag(job.id, false, true, db),
-      ).rejects.toBeInstanceOf(FieldConflictError);
-    });
-
-    it("sets and clears Close-Out via compare-and-swap", async () => {
-      const job = await createJob(baseInput(), db);
-      expect(job.closedOut).toBe(false);
-
-      const closedOut = await updateJobClosedOut(job.id, false, true, db);
-      expect(closedOut.closedOut).toBe(true);
-
-      const reopened = await updateJobClosedOut(job.id, true, false, db);
-      expect(reopened.closedOut).toBe(false);
-    });
-
-    it("rejects a concurrent Close-Out edit when the expected old value is stale", async () => {
-      const job = await createJob(baseInput(), db);
-      await updateJobClosedOut(job.id, false, true, db);
-
-      await expect(updateJobClosedOut(job.id, false, true, db)).rejects.toBeInstanceOf(
-        FieldConflictError,
+    it("throws JobNotFoundError when acquiring a lock on a Job that doesn't exist", async () => {
+      await expect(acquireJobLock(randomUUID(), staffAId, db)).rejects.toBeInstanceOf(
+        JobNotFoundError,
       );
+    });
+
+    it("releases the caller's own lock", async () => {
+      const job = await createJob(baseInput(), db);
+      await acquireJobLock(job.id, staffAId, db);
+
+      await releaseJobLock(job.id, staffAId, db);
+
+      const after = await getJobById(job.id, db);
+      expect(after?.lockedByUserId).toBeNull();
+      expect(after?.lockedAt).toBeNull();
+    });
+
+    it("no-ops when trying to release a lock held by someone else", async () => {
+      const job = await createJob(baseInput(), db);
+      await acquireJobLock(job.id, staffAId, db);
+
+      await releaseJobLock(job.id, staffBId, db);
+
+      const after = await getJobById(job.id, db);
+      expect(after?.lockedByUserId).toBe(staffAId);
+    });
+
+    describe("updateJob", () => {
+      it("succeeds when the caller holds the lock, applies the patch, and releases the lock", async () => {
+        const job = await createJob(baseInput(), db);
+        await acquireJobLock(job.id, staffAId, db);
+
+        const updated = await updateJob(
+          job.id,
+          basePatch({ techNotes: "Corrected note", boreFootage: 100 }),
+          staffAId,
+          db,
+        );
+
+        expect(updated.techNotes).toBe("Corrected note");
+        expect(updated.boreFootage).toBe(100);
+        expect(updated.boreCode).toBe("DDB1");
+        expect(updated.lockedByUserId).toBeNull();
+        expect(updated.lockedAt).toBeNull();
+      });
+
+      it("recomputes Bore Code from the patched Bore Footage", async () => {
+        const job = await createJob(baseInput({ boreFootage: 100 }), db);
+        await acquireJobLock(job.id, staffAId, db);
+
+        const updated = await updateJob(job.id, basePatch({ boreFootage: 600 }), staffAId, db);
+
+        expect(updated.boreCode).toBe("DDB4 DBC1 x 150");
+      });
+
+      it("applies Discrepancy Flag and Close-Out as part of the same combined update", async () => {
+        const job = await createJob(baseInput(), db);
+        await acquireJobLock(job.id, staffAId, db);
+
+        const updated = await updateJob(
+          job.id,
+          basePatch({ discrepancyFlag: true, closedOut: true }),
+          staffAId,
+          db,
+        );
+
+        expect(updated.discrepancyFlag).toBe(true);
+        expect(updated.closedOut).toBe(true);
+      });
+
+      it("throws LockNotHeldError when the caller never acquired the lock", async () => {
+        const job = await createJob(baseInput(), db);
+
+        await expect(updateJob(job.id, basePatch(), staffAId, db)).rejects.toBeInstanceOf(
+          LockNotHeldError,
+        );
+      });
+
+      it("throws LockNotHeldError when someone else holds the lock", async () => {
+        const job = await createJob(baseInput(), db);
+        await acquireJobLock(job.id, staffAId, db);
+
+        await expect(updateJob(job.id, basePatch(), staffBId, db)).rejects.toBeInstanceOf(
+          LockNotHeldError,
+        );
+      });
+
+      it("throws LockNotHeldError when the caller's own lock has expired", async () => {
+        const job = await createJob(baseInput(), db);
+        await acquireJobLock(job.id, staffAId, db);
+
+        const staleTimestamp = new Date(Date.now() - 16 * 60 * 1000);
+        await db.update(jobs).set({ lockedAt: staleTimestamp }).where(eq(jobs.id, job.id));
+
+        await expect(updateJob(job.id, basePatch(), staffAId, db)).rejects.toBeInstanceOf(
+          LockNotHeldError,
+        );
+      });
+
+      it("throws JobNotFoundError when the job id doesn't exist", async () => {
+        await expect(updateJob(randomUUID(), basePatch(), staffAId, db)).rejects.toBeInstanceOf(
+          JobNotFoundError,
+        );
+      });
     });
   });
 });
