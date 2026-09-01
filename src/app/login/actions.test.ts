@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
-// Server-Action seam test for the login flow: mock signIn/auth (from the
-// root auth.ts) and redirect (from next/navigation), the same way
+// Server-Action seam test for the login flow: mock signIn (from the root
+// auth.ts) and redirect (from next/navigation), the same way
 // src/app/(dashboard)/jobs/actions.test.ts mocks auth() — exercise the
 // real login() function, assert on what it does with each outcome.
 //
@@ -12,15 +12,13 @@ import { describe, expect, it, vi } from "vitest";
 // CredentialsSignin are re-implemented minimally here, matching real
 // next-auth's shape closely enough for the `instanceof`/`.type` check in
 // actions.ts to behave identically.
-const { signInMock, authMock, redirectMock } = vi.hoisted(() => ({
+const { signInMock, redirectMock } = vi.hoisted(() => ({
   signInMock: vi.fn(),
-  authMock: vi.fn(),
   redirectMock: vi.fn(),
 }));
 
 vi.mock("../../../auth", () => ({
   signIn: signInMock,
-  auth: authMock,
 }));
 
 vi.mock("next/navigation", () => ({
@@ -74,29 +72,21 @@ describe("login Server Action", () => {
     await expect(login({ error: null }, formData)).rejects.toThrow("database is down");
   });
 
-  it("redirects a Technician to the intake form on success", async () => {
+  // Deliberately does NOT call auth() again to resolve a role and redirect
+  // there directly — that raced against signIn()'s just-set session cookie
+  // in real production (a genuine crash, not a hypothetical), because
+  // auth() isn't guaranteed to see a cookie set earlier in the same
+  // request. Redirecting to "/" lets a fresh request (src/app/page.tsx)
+  // resolve the role once the cookie is actually there.
+  it("redirects to / on success, letting a fresh request resolve the role", async () => {
     signInMock.mockResolvedValueOnce(undefined);
-    authMock.mockResolvedValueOnce({ user: { role: "technician" } });
 
     const formData = new FormData();
-    formData.set("email", "tech@example.com");
+    formData.set("email", "someone@example.com");
     formData.set("password", "correct-password");
 
     await login({ error: null }, formData);
 
-    expect(redirectMock).toHaveBeenCalledWith("/jobs/new");
-  });
-
-  it("redirects Office Staff to the dashboard on success", async () => {
-    signInMock.mockResolvedValueOnce(undefined);
-    authMock.mockResolvedValueOnce({ user: { role: "office_staff" } });
-
-    const formData = new FormData();
-    formData.set("email", "staff@example.com");
-    formData.set("password", "correct-password");
-
-    await login({ error: null }, formData);
-
-    expect(redirectMock).toHaveBeenCalledWith("/jobs");
+    expect(redirectMock).toHaveBeenCalledWith("/");
   });
 });

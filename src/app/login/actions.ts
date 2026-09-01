@@ -2,8 +2,7 @@
 
 import { AuthError } from "next-auth";
 import { redirect } from "next/navigation";
-import { auth, signIn } from "../../../auth";
-import { homePathForRole } from "@/auth/redirect";
+import { signIn } from "../../../auth";
 
 export interface LoginState {
   error: string | null;
@@ -31,7 +30,12 @@ export async function login(_prevState: LoginState, formData: FormData): Promise
   }
 
   // signIn(..., { redirect: false }) doesn't throw Next's redirect signal,
-  // so the actual navigation happens here, after the session cookie is set.
-  const session = await auth();
-  redirect(homePathForRole(session!.user.role));
+  // so the actual navigation happens here. Deliberately redirect to "/"
+  // rather than calling auth() again in this same action to resolve the
+  // role ourselves: the session cookie signIn() just set isn't reliably
+  // visible to auth() within the same request/action (a known Auth.js
+  // timing gotcha — it showed up as a real production crash, not a
+  // hypothetical). "/" already does its own fresh-request role lookup
+  // (src/app/page.tsx), where the cookie is guaranteed to be present.
+  redirect("/");
 }
