@@ -11,15 +11,6 @@ import { openJobForEdit } from "./actions";
 // src/app/(dashboard)/markets/page.tsx's established pattern.
 export const dynamic = "force-dynamic";
 
-// Thin wrapper so the <form action> call site can discard openJobForEdit's
-// return value, matching src/app/(dashboard)/markets/page.tsx's
-// createMarketFormAction/etc. pattern. Runs on the server (this file is a
-// Server Component) even without its own "use server" directive, since it
-// only calls into an already-"use server" action.
-async function openJobForEditFormAction(jobId: string) {
-  await openJobForEdit(jobId);
-}
-
 export default async function JobsPage({
   searchParams,
 }: {
@@ -102,7 +93,7 @@ export default async function JobsPage({
                   )}
                 </td>
                 <td>
-                  <form action={openJobForEditFormAction.bind(null, job.id)}>
+                  <form action={openJobForEdit.bind(null, job.id)}>
                     <button type="submit">Edit</button>
                   </form>
                 </td>
