@@ -1,17 +1,22 @@
 import { randomUUID } from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-// Server-Action seam tests: mock `auth()` (from the root auth.ts) to exercise
-// the office_staff role gate, but exercise the real query layer against a
+// Server-Action seam tests: mock `auth()` (from the root auth.ts) and
+// next/navigation's redirect, but exercise the real query layer against a
 // PGlite (real Postgres, WASM) database — see src/db/test-utils.ts. Mirrors
 // src/app/(dashboard)/markets/actions.test.ts's established pattern.
-const { authMock } = vi.hoisted(() => ({ authMock: vi.fn() }));
+const { authMock, redirectMock } = vi.hoisted(() => ({
+  authMock: vi.fn(),
+  redirectMock: vi.fn((url: string) => {
+    throw new Error(`NEXT_REDIRECT:${url}`);
+  }),
+}));
 vi.mock("../../../../auth", () => ({
   auth: authMock,
 }));
 
-vi.mock("next/cache", () => ({
-  revalidatePath: vi.fn(),
+vi.mock("next/navigation", () => ({
+  redirect: redirectMock,
 }));
 
 vi.mock("@/db", async () => {
@@ -20,28 +25,28 @@ vi.mock("@/db", async () => {
   return { db };
 });
 
-import { createJob } from "@/db/queries/jobs";
+import { acquireJobLock, createJob } from "@/db/queries/jobs";
 import { markets, users } from "@/db/schema";
 import { db as testDb } from "@/db";
-import { updateJobFieldAction } from "./actions";
+import { openJobForEdit } from "./actions";
 
-function officeStaffSession() {
-  return { user: { role: "office_staff" } };
+function officeStaffSession(userId: string) {
+  return { user: { id: userId, role: "office_staff" } };
 }
 
-function technicianSession() {
-  return { user: { role: "technician" } };
+function technicianSession(userId: string) {
+  return { user: { id: userId, role: "technician" } };
 }
 
 describe("jobs Server Actions", () => {
   let technicianId: string;
+  let staffAId: string;
+  let staffBId: string;
 
   beforeEach(async () => {
     authMock.mockReset();
+    redirectMock.mockClear();
 
-    // Market is derived server-side from addressState (FL/GA only, see
-    // issue #33) rather than submitted — so the Markets it can resolve into
-    // must actually exist.
     await testDb.insert(markets).values([{ name: "Florida" }, { name: "Georgia" }]);
 
     const [technician] = await testDb
@@ -49,6 +54,16 @@ describe("jobs Server Actions", () => {
       .values({ email: `tech-${randomUUID()}@example.com`, role: "technician", passwordHash: "hash" })
       .returning();
     technicianId = technician.id;
+
+    const [staffA, staffB] = await testDb
+      .insert(users)
+      .values([
+        { email: `staff-a-${randomUUID()}@example.com`, role: "office_staff", passwordHash: "hash" },
+        { email: `staff-b-${randomUUID()}@example.com`, role: "office_staff", passwordHash: "hash" },
+      ])
+      .returning();
+    staffAId = staffA.id;
+    staffBId = staffB.id;
   });
 
   async function seedJob() {
@@ -56,12 +71,6 @@ describe("jobs Server Actions", () => {
       {
         id: randomUUID(),
         technicianId,
-        // Unique per call — the mocked "@/db" module (and its underlying
-        // PGlite instance) is shared across every test in this file, and
-        // Market is now derived from addressState rather than accepted as
-        // input, so every seedJob() call in this suite resolves to the same
-        // Georgia Market row. A fixed job number would collide with the
-        // real (market_id, job_number) uniqueness constraint across tests.
         jobNumber: `J-${randomUUID()}`,
         date: new Date("2026-01-15T00:00:00Z"),
         addressStreet: "104 E Welwood Dr",
@@ -80,146 +89,50 @@ describe("jobs Server Actions", () => {
     );
   }
 
-  it("allows an office_staff session to correct a field", async () => {
-    authMock.mockResolvedValue(officeStaffSession());
-    const job = await seedJob();
-
-    const result = await updateJobFieldAction(job.id, "techNotes", "Original note", "Fixed note");
-
-    expect(result.status).toBe("success");
-    if (result.status === "success") {
-      expect(result.job.techNotes).toBe("Fixed note");
-    }
-  });
-
-  it("rejects a technician session", async () => {
-    authMock.mockResolvedValue(technicianSession());
-    const job = await seedJob();
-
-    await expect(
-      updateJobFieldAction(job.id, "techNotes", "Original note", "Should not apply"),
-    ).rejects.toThrow(/office staff only/i);
-  });
-
-  it("rejects when there is no session", async () => {
-    authMock.mockResolvedValue(null);
-    const job = await seedJob();
-
-    await expect(
-      updateJobFieldAction(job.id, "techNotes", "Original note", "Should not apply"),
-    ).rejects.toThrow(/office staff only/i);
-  });
-
-  it("returns a conflict result (not a thrown error) when the expected old value is stale", async () => {
-    authMock.mockResolvedValue(officeStaffSession());
-    const job = await seedJob();
-
-    await updateJobFieldAction(job.id, "techNotes", "Original note", "Staff A's note");
-    const second = await updateJobFieldAction(job.id, "techNotes", "Original note", "Staff B's note");
-
-    expect(second.status).toBe("conflict");
-  });
-
-  it("allows two sequential edits to different fields on the same Job to both succeed", async () => {
-    authMock.mockResolvedValue(officeStaffSession());
-    const job = await seedJob();
-
-    const addressResult = await updateJobFieldAction(
-      job.id,
-      "addressStreet",
-      "104 E Welwood Dr",
-      "200 Peachtree St",
-    );
-    const notesResult = await updateJobFieldAction(
-      job.id,
-      "techNotes",
-      "Original note",
-      "Updated note",
-    );
-
-    expect(addressResult.status).toBe("success");
-    expect(notesResult.status).toBe("success");
-  });
-
-  it("returns a not_found result for a job id that doesn't exist", async () => {
-    authMock.mockResolvedValue(officeStaffSession());
-
-    const result = await updateJobFieldAction(randomUUID(), "techNotes", "anything", "new");
-
-    expect(result.status).toBe("not_found");
-  });
-
-  describe("Discrepancy Flag", () => {
-    it("allows an office_staff session to set and clear the flag", async () => {
-      authMock.mockResolvedValue(officeStaffSession());
+  describe("openJobForEdit", () => {
+    it("acquires the lock and redirects to the detail page on success", async () => {
+      authMock.mockResolvedValue(officeStaffSession(staffAId));
       const job = await seedJob();
 
-      const setResult = await updateJobFieldAction(job.id, "discrepancyFlag", false, true);
-      expect(setResult.status).toBe("success");
-      if (setResult.status === "success") {
-        expect(setResult.job.discrepancyFlag).toBe(true);
-      }
+      await expect(openJobForEdit(job.id)).rejects.toThrow("NEXT_REDIRECT");
 
-      const clearResult = await updateJobFieldAction(job.id, "discrepancyFlag", true, false);
-      expect(clearResult.status).toBe("success");
-      if (clearResult.status === "success") {
-        expect(clearResult.job.discrepancyFlag).toBe(false);
-      }
+      expect(redirectMock).toHaveBeenCalledWith(`/jobs/${job.id}`);
+    });
+
+    it("redirects back to the list naming the holder when the Job is already locked", async () => {
+      authMock.mockResolvedValue(officeStaffSession(staffAId));
+      const job = await seedJob();
+      await acquireJobLock(job.id, staffBId, testDb);
+
+      await expect(openJobForEdit(job.id)).rejects.toThrow("NEXT_REDIRECT");
+
+      const [url] = redirectMock.mock.calls[0];
+      expect(url).toMatch(/^\/jobs\?notice=/);
+      expect(url).toContain("error=1");
+    });
+
+    it("redirects back to the list when the Job doesn't exist", async () => {
+      authMock.mockResolvedValue(officeStaffSession(staffAId));
+
+      await expect(openJobForEdit(randomUUID())).rejects.toThrow("NEXT_REDIRECT");
+
+      const [url] = redirectMock.mock.calls[0];
+      expect(url).toMatch(/^\/jobs\?notice=/);
+      expect(url).toContain("error=1");
     });
 
     it("rejects a technician session", async () => {
-      authMock.mockResolvedValue(technicianSession());
+      authMock.mockResolvedValue(technicianSession(technicianId));
       const job = await seedJob();
 
-      await expect(
-        updateJobFieldAction(job.id, "discrepancyFlag", false, true),
-      ).rejects.toThrow(/office staff only/i);
+      await expect(openJobForEdit(job.id)).rejects.toThrow(/office staff only/i);
     });
 
     it("rejects when there is no session", async () => {
       authMock.mockResolvedValue(null);
       const job = await seedJob();
 
-      await expect(
-        updateJobFieldAction(job.id, "discrepancyFlag", false, true),
-      ).rejects.toThrow(/office staff only/i);
-    });
-  });
-
-  describe("Close-Out", () => {
-    it("allows an office_staff session to mark a Job Closed-Out and reopen it", async () => {
-      authMock.mockResolvedValue(officeStaffSession());
-      const job = await seedJob();
-
-      const closeResult = await updateJobFieldAction(job.id, "closedOut", false, true);
-      expect(closeResult.status).toBe("success");
-      if (closeResult.status === "success") {
-        expect(closeResult.job.closedOut).toBe(true);
-      }
-
-      const reopenResult = await updateJobFieldAction(job.id, "closedOut", true, false);
-      expect(reopenResult.status).toBe("success");
-      if (reopenResult.status === "success") {
-        expect(reopenResult.job.closedOut).toBe(false);
-      }
-    });
-
-    it("rejects a technician session", async () => {
-      authMock.mockResolvedValue(technicianSession());
-      const job = await seedJob();
-
-      await expect(updateJobFieldAction(job.id, "closedOut", false, true)).rejects.toThrow(
-        /office staff only/i,
-      );
-    });
-
-    it("rejects when there is no session", async () => {
-      authMock.mockResolvedValue(null);
-      const job = await seedJob();
-
-      await expect(updateJobFieldAction(job.id, "closedOut", false, true)).rejects.toThrow(
-        /office staff only/i,
-      );
+      await expect(openJobForEdit(job.id)).rejects.toThrow(/office staff only/i);
     });
   });
 });

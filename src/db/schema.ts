@@ -80,6 +80,12 @@ export const jobs = pgTable(
     techNotes: text("tech_notes").notNull().default(""),
     closedOut: boolean("closed_out").notNull().default(false),
     discrepancyFlag: boolean("discrepancy_flag").notNull().default(false),
+    // Pessimistic whole-Job lock (issue #34, replacing the per-field CAS
+    // mechanism — see docs/adr/0002-pessimistic-locking-for-job-edits.md).
+    // Both null when unlocked. A lock older than 15 minutes is treated as
+    // stale and acquirable by anyone — see src/db/queries/jobs.ts.
+    lockedByUserId: uuid("locked_by_user_id").references(() => users.id),
+    lockedAt: timestamp("locked_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

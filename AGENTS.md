@@ -16,7 +16,7 @@ src/
     api/export/             Route Handler(s) streaming CSV on demand (general + Discrepancy-flagged)
   db/
     schema.ts              Drizzle schema: Market, User, Job, Invitation
-    queries/                Targeted, field-level update queries (see Ground rules)
+    queries/                Job queries, incl. pessimistic whole-Job locking (see Ground rules)
   lib/
     domain/                 Pure domain logic: Bore Payment Tier computation, duplicate-hint matching
                             — framework-free, unit-testable in isolation
@@ -26,8 +26,7 @@ src/
 
 ## Ground rules
 
-- **Never write a full-record "save the whole Job" mutation.** Every write is a targeted update to a specific field or field-group (e.g. "set discrepancy flag", "update tech notes"). This is the mechanism the entire concurrency-safety design depends on — see docs/architecture.md's "Key decisions" section before touching Job mutations.
-- **Same-field concurrent edits** use a per-field compare-and-swap update (`WHERE id = ? AND field = expectedOldValue`), rejected with a "this changed, reload" error when the old value doesn't match — never silently overwritten and never resolved by locking the whole row. See issue #1's spec for the full rationale.
+- **Job edits are gated by a pessimistic whole-Job lock, not per-field compare-and-swap.** Office Staff acquire an exclusive lock on the entire Job record (opening it in the detail/edit view), make every change in one combined save, and release the lock — rather than each field independently guarding its own compare-and-swap. The lock auto-expires after 15 minutes of inactivity. This reverses issue #1/#7/#8/#24/#25's original CAS design — see docs/adr/0002-pessimistic-locking-for-job-edits.md and docs/architecture.md's "Key decisions" concurrency section before touching Job mutations.
 - **Bore Code is computed, never client-trusted.** It's recomputed server-side from `bore_footage` on every save via the tier rule in CONTEXT.md, and persisted (not read-time-only) so historical Jobs retain the code that applied when they were billed.
 - **Route Handlers vs Server Actions**: the offline-sync path (`api/sync`) is a plain JSON Route Handler because service workers need real HTTP endpoints. The Office Staff dashboard's interactive mutations use Server Actions. Don't mix these — a dashboard mutation doesn't need offline queuing, and the sync path can't use Server Actions.
 - **`(market_id, job_number)` is a hard uniqueness constraint** at the database level — not just app-level validation.
@@ -67,7 +66,7 @@ Single-context: root `CONTEXT.md` + `docs/adr/`. See `docs/agents/domain.md`.
 - [CONTEXT.md](./CONTEXT.md) — domain glossary (Job, Market, Bore Payment Tier, Discrepancy Flag, etc.)
 - [docs/architecture.md](./docs/architecture.md) — full technical decision record, open questions, the iOS offline-retention spike
 - [docs/elite-jobs-mvp.prd.md](./docs/elite-jobs-mvp.prd.md) — product intent, hypothesis, success metrics
-- [docs/adr/](./docs/adr/) — architecture decision records (currently: 0001, offline-first Job submission)
+- [docs/adr/](./docs/adr/) — architecture decision records (currently: 0001 offline-first Job submission, 0002 pessimistic locking for Job edits)
 
 <!-- BEGIN:nextjs-agent-rules -->
 
