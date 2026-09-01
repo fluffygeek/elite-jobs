@@ -5,19 +5,32 @@ import { createMarketAction, renameMarketAction, setMarketActiveAction } from ".
 // inactive), add, rename, and toggle active/reactivate. Plain Server
 // Components + Server Actions via <form action> — no client-state library,
 // no design system (per AGENTS.md's "no premature abstraction" principle).
-// Server Action `action` props on <form> must return void | Promise<void>,
-// but the action functions themselves return the affected Market (useful for
-// the Server Action tests). These thin wrappers discard the return value for
-// the form-binding call sites.
+//
+// These wrappers exist for two reasons: <form action> needs a function that
+// returns void | Promise<void>, but the underlying actions return the
+// affected Market (useful for their own tests); and — the part that was
+// actually broken (issue #37) — a plain local function in a Server
+// Component file is NOT a real Server Action just because the file renders
+// on the server. Next.js only treats a function as a serializable Server
+// Action reference if it's exported from a "use server" file, or (as here)
+// carries its own inline "use server" directive. Without that, passing the
+// bound function to <form action> throws at runtime: "Functions cannot be
+// passed directly to Client Components unless you explicitly expose it by
+// marking it with 'use server'" — caught by actually clicking these buttons
+// in a browser, not by the existing tests, which only call the underlying
+// actions.ts functions directly and never exercise this form-binding path.
 async function createMarketFormAction(formData: FormData) {
+  "use server";
   await createMarketAction(formData);
 }
 
 async function renameMarketFormAction(id: string, formData: FormData) {
+  "use server";
   await renameMarketAction(id, formData);
 }
 
 async function setMarketActiveFormAction(id: string, active: boolean) {
+  "use server";
   await setMarketActiveAction(id, active);
 }
 
