@@ -45,6 +45,7 @@ export default async function MarketsPage() {
     <main>
       <h1>Markets</h1>
 
+      <div style={{ overflowX: "auto" }}>
       <table>
         <thead>
           <tr>
@@ -76,6 +77,7 @@ export default async function MarketsPage() {
           ))}
         </tbody>
       </table>
+      </div>
 
       <h2>Add Market</h2>
       <form action={createMarketFormAction}>

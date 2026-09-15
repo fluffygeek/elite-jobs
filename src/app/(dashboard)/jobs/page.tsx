@@ -34,6 +34,7 @@ export default async function JobsPage({
         <a href="/api/export?scope=flagged">Export flagged</a>
       </p>
 
+      <div style={{ overflowX: "auto" }}>
       <table>
         <thead>
           <tr>
@@ -102,6 +103,7 @@ export default async function JobsPage({
           })}
         </tbody>
       </table>
+      </div>
     </main>
   );
 }
